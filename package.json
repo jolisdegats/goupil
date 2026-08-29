@@ -1,0 +1,14 @@
+{
+  "name": "goupil",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stealth browser fetch as a service — POST a URL, get the rendered HTML back (Camoufox on Netlify Functions). App-agnostic.",
+  "scripts": {
+    "prepare-browser": "npx camoufox-js fetch || true"
+  },
+  "dependencies": {
+    "camoufox-js": "^0.9.1",
+    "playwright-core": "^1.58.2"
+  }
+}

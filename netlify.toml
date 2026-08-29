@@ -1,0 +1,27 @@
+# goupil — Netlify config
+#
+# The build step pre-downloads the Camoufox browser when the CLI supports it
+# (`|| true`: camoufox-js can also provision on first launch at runtime, which
+# is how the same worker already behaves in its original deployment).
+
+[build]
+  command = "npm run prepare-browser"
+  publish = "public"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+  # The worker runs as a real `node` subprocess and resolves camoufox-js /
+  # playwright-core from node_modules at runtime — keep them out of the esbuild
+  # bundle and ship them as-is inside the function package.
+  external_node_modules = ["camoufox-js", "playwright-core"]
+  included_files = ["scripts/**"]
+
+# No previews needed for an API service — don't burn build credits.
+[context.deploy-preview]
+  ignore = "exit 0"
+
+[context.branch-deploy]
+  ignore = "exit 0"
