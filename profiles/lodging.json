@@ -1,34 +1,111 @@
 {
   "$doc": "Défaut optionnel « hébergement » (les apps envoient normalement LEURS règles par requête) — générique à tout site voyage exposant OpenGraph et/ou schema.org (Hotel, VacationRental, Product…). Chaque champ est une règle ou une CHAÎNE de règles : la première qui trouve gagne.",
   "name": [
-    { "jsonld": "Hotel.name" },
-    { "jsonld": "VacationRental.name" },
-    { "jsonld": "LodgingBusiness.name" },
-    { "jsonld": "Product.name" },
-    { "meta": "og:title" }
+    {
+      "jsonld": "Hotel.name"
+    },
+    {
+      "jsonld": "VacationRental.name"
+    },
+    {
+      "jsonld": "LodgingBusiness.name"
+    },
+    {
+      "jsonld": "Product.name"
+    },
+    {
+      "meta": "og:title"
+    },
+    {
+      "microdata": "name"
+    }
   ],
   "description": [
-    { "jsonld": "Hotel.description" },
-    { "jsonld": "VacationRental.description" },
-    { "meta": "og:description" }
+    {
+      "jsonld": "Hotel.description"
+    },
+    {
+      "jsonld": "VacationRental.description"
+    },
+    {
+      "meta": "og:description"
+    },
+    {
+      "microdata": "description"
+    }
   ],
   "city": [
-    { "jsonld": "Hotel.address.addressLocality" },
-    { "jsonld": "VacationRental.address.addressLocality" },
-    { "jsonld": "LodgingBusiness.address.addressLocality" },
-    { "jsonld": "*.address.addressLocality" }
+    {
+      "jsonld": "Hotel.address.addressLocality"
+    },
+    {
+      "jsonld": "VacationRental.address.addressLocality"
+    },
+    {
+      "jsonld": "LodgingBusiness.address.addressLocality"
+    },
+    {
+      "jsonld": "*.address.addressLocality"
+    },
+    {
+      "microdata": "addressLocality"
+    }
   ],
   "country": [
-    { "jsonld": "Hotel.address.addressCountry" },
-    { "jsonld": "*.address.addressCountry" }
+    {
+      "jsonld": "Hotel.address.addressCountry"
+    },
+    {
+      "jsonld": "*.address.addressCountry"
+    },
+    {
+      "microdata": "addressCountry"
+    }
   ],
-  "latitude": [{ "jsonld": "*.geo.latitude" }],
-  "longitude": [{ "jsonld": "*.geo.longitude" }],
-  "rating": [{ "jsonld": "*.aggregateRating.ratingValue" }],
-  "reviewCount": [{ "jsonld": "*.aggregateRating.reviewCount" }],
+  "latitude": [
+    {
+      "jsonld": "*.geo.latitude"
+    },
+    {
+      "microdata": "latitude"
+    }
+  ],
+  "longitude": [
+    {
+      "jsonld": "*.geo.longitude"
+    },
+    {
+      "microdata": "longitude"
+    }
+  ],
+  "rating": [
+    {
+      "jsonld": "*.aggregateRating.ratingValue"
+    },
+    {
+      "microdata": "ratingValue"
+    }
+  ],
+  "reviewCount": [
+    {
+      "jsonld": "*.aggregateRating.reviewCount"
+    },
+    {
+      "microdata": "reviewCount"
+    }
+  ],
   "mainImage": [
-    { "meta": "og:image" },
-    { "jsonld": "Hotel.image" },
-    { "jsonld": "*.image" }
+    {
+      "meta": "og:image"
+    },
+    {
+      "jsonld": "Hotel.image"
+    },
+    {
+      "jsonld": "*.image"
+    },
+    {
+      "microdata": "image"
+    }
   ]
 }

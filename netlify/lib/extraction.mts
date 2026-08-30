@@ -5,11 +5,19 @@
  */
 import { PROFILES } from './profiles.mts'
 
-export type Rule = { meta?: string; jsonld?: string; regex?: string; flags?: string; all?: boolean }
+export type Rule = {
+  meta?: string
+  jsonld?: string
+  /** schema.org en MICRODATA (itemprop) — l'autre standard, cf. extractMicrodata. */
+  microdata?: string
+  regex?: string
+  flags?: string
+  all?: boolean
+}
 /** Un champ = une règle ou une CHAÎNE de fallback — la première qui trouve gagne. */
 export type RuleChain = Rule | Rule[]
 
-export const AUTO_SECTIONS = ['meta', 'jsonld', 'images'] as const
+export const AUTO_SECTIONS = ['meta', 'jsonld', 'microdata', 'images'] as const
 export type AutoSection = (typeof AUTO_SECTIONS)[number]
 
 const MAX_RULES = 50
@@ -52,6 +60,39 @@ export function extractJsonLd(html: string): unknown[] {
   return nodes
 }
 
+/**
+ * schema.org en **microdata** : le même vocabulaire que JSON-LD, mais porté par
+ * des attributs `itemprop` sur les balises. Beaucoup d'OTA (Expedia) ne
+ * publient QUE cette forme — sans ça, une fiche paraît vide de données
+ * structurées alors qu'elle est entièrement décrite.
+ *
+ * On récupère, par propriété : `content` (sur meta/link), sinon `href`/`src`,
+ * sinon le texte de la balise. Première occurrence gagnante — les pages
+ * répètent souvent la même propriété (galerie, pied de page).
+ */
+export function extractMicrodata(html: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const re = /<([a-z0-9]+)\s([^>]*\bitemprop=["']([^"']+)["'][^>]*)>/gi
+  for (const m of html.matchAll(re)) {
+    const [, tag, attrs, rawName] = m
+    const name = rawName.trim().split(/\s+/)[0]?.toLowerCase()
+    if (!name || name in out) continue
+    let value =
+      attrs.match(/\bcontent=["']([^"']*)["']/i)?.[1] ??
+      attrs.match(/\b(?:href|src)=["']([^"']*)["']/i)?.[1]
+    if (value === undefined && !/^(?:meta|link|img|a)$/i.test(tag)) {
+      // Valeur portée par le texte : on prend le contenu de la balise.
+      const after = html.slice(m.index! + m[0].length)
+      const close = after.search(new RegExp(`</${tag}>`, 'i'))
+      if (close > 0 && close < 4000) {
+        value = after.slice(0, close).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      }
+    }
+    if (value) out[name] = value.replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
+  }
+  return out
+}
+
 export function extractImages(html: string): string[] {
   // Les blobs JSON échappent les slashes (https:\/\/…) — on déséchappe une
   // copie pour que ces URLs matchent aussi.
@@ -89,9 +130,11 @@ function walkPath(node: unknown, segments: string[]): unknown {
 export function applyRule(
   rule: Rule,
   html: string,
-  auto: { meta: Record<string, string>; jsonld: unknown[] }
+  auto: { meta: Record<string, string>; jsonld: unknown[]; microdata?: Record<string, string> }
 ): unknown {
   if (rule.meta) return auto.meta[rule.meta.toLowerCase()]
+
+  if (rule.microdata) return auto.microdata?.[rule.microdata.toLowerCase()]
 
   if (rule.jsonld) {
     const [type, ...path] = rule.jsonld.split('.')
@@ -126,7 +169,7 @@ export function applyRule(
 export function resolveField(
   chain: RuleChain,
   html: string,
-  auto: { meta: Record<string, string>; jsonld: unknown[] }
+  auto: { meta: Record<string, string>; jsonld: unknown[]; microdata?: Record<string, string> }
 ): unknown {
   const rules = Array.isArray(chain) ? chain : [chain]
   for (const rule of rules) {
@@ -206,13 +249,15 @@ export function extractFromHtml(
 
   const meta = extractMetas(html)
   const jsonld = extractJsonLd(html)
-  const engineAuto = { meta, jsonld }
+  const microdata = extractMicrodata(html)
+  const engineAuto = { meta, jsonld, microdata }
 
   const body: Record<string, unknown> = {}
   if (autoSections.length > 0) {
     const auto: Record<string, unknown> = {}
     if (autoSections.includes('meta')) auto.meta = meta
     if (autoSections.includes('jsonld')) auto.jsonld = jsonld
+    if (autoSections.includes('microdata')) auto.microdata = microdata
     if (autoSections.includes('images')) auto.images = extractImages(html)
     body.auto = auto
   }

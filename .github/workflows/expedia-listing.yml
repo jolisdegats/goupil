@@ -28,3 +28,5 @@ jobs:
         run: node .github/scripts/richness-compare.mjs social "${{ inputs.url }}"
       - name: "Où vivent les données ? (JSON embarqué, état global, champs)"
         run: node .github/scripts/expedia-dig.mjs "${{ inputs.url }}" Juliana
+      - name: "Extraction complète (profil lodging + microdata)"
+        run: node .github/scripts/expedia-extract.mjs "${{ inputs.url }}"
