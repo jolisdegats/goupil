@@ -1,0 +1,32 @@
+name: price-search
+# Le prix est-il sur les pages de RECHERCHE plutôt que sur les fiches ?
+# On n'avait testé que des fiches — or une page de résultats existe justement
+# pour afficher des tarifs, et hamak connaît l'hôtel + les dates du séjour.
+
+on:
+  workflow_dispatch:
+    inputs:
+      city:
+        description: "Ville"
+        required: false
+        default: "Bruxelles"
+      hotel:
+        description: "Nom d'hôtel à retrouver dans les résultats"
+        required: false
+        default: "Juliana"
+
+jobs:
+  recherche:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [booking, expedia]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: "${{ matrix.platform }} — prix en page de recherche"
+        run: node .github/scripts/price-search.mjs "${{ matrix.platform }}" "${{ inputs.city }}" "${{ inputs.hotel }}"
