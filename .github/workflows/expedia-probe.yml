@@ -1,0 +1,29 @@
+name: expedia-probe
+# Diagnostic ciblé : le soft-block Expedia depuis IP datacenter est-il une
+# redirection (mur IP, non contournable sans IP résidentielle) ou un flow
+# récupérable (consentement + attente) ? Manuel uniquement.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "URL fiche Expedia"
+        required: false
+        default: "https://www.expedia.fr/Paris-Hotel-Paris-Marriott-Rive-Gauche-Hotel-Conference-Center.h6620.Hotel-Information"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx --yes playwright@1.58.2 install-deps firefox
+      - run: npx --yes camoufox-js fetch
+      - name: "Sonde Expedia"
+        run: node .github/scripts/expedia-probe.mjs "${{ inputs.url }}"
