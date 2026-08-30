@@ -1,0 +1,39 @@
+name: httpcloak
+# Dernier levier gratuit contre Expedia : une empreinte transport plus fine
+# que celle d'impit (JA3/JA4 + HTTP/2 « Akamai » + TCP/IP) suffit-elle, ou le
+# mur est-il bien l'IP datacenter ? Manuel uniquement.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expedia:
+        description: "URL Expedia"
+        required: false
+        default: "https://www.expedia.fr/"
+      booking:
+        description: "URL Booking (témoin)"
+        required: false
+        default: "https://www.booking.com/hotel/fr/le-bristol-paris.html"
+
+jobs:
+  httpcloak:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: "Installer httpcloak"
+        run: npm install --no-save --no-audit --no-fund httpcloak
+      - name: "Expedia — chrome-latest"
+        continue-on-error: true
+        run: node .github/scripts/httpcloak-test.mjs "${{ inputs.expedia }}" chrome-latest
+      - name: "Expedia — chrome-latest-windows (profil le plus courant)"
+        continue-on-error: true
+        run: node .github/scripts/httpcloak-test.mjs "${{ inputs.expedia }}" chrome-latest-windows
+      - name: "Expedia — fiche hôtel (si l'accueil passe)"
+        continue-on-error: true
+        run: node .github/scripts/httpcloak-test.mjs "https://www.expedia.fr/Hotel-Search?destination=Paris" chrome-latest-windows
+      - name: "Booking (témoin) — chrome-latest"
+        continue-on-error: true
+        run: node .github/scripts/httpcloak-test.mjs "${{ inputs.booking }}" chrome-latest
