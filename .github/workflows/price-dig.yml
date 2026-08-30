@@ -1,0 +1,44 @@
+name: price-dig
+# Les captures de Julie prouvent que les prix sont AFFICHÉS (Expedia : 582 €,
+# 291 €/nuit ; Booking : 4 244 € pour 2 nuits). Nos tests n'en trouvaient
+# aucun → c'est la façon de chercher qui échoue, pas la page. On repart des
+# libellés visibles plutôt que du symbole €.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expedia:
+        description: "Fiche Expedia avec dates"
+        required: false
+        default: "https://www.expedia.fr/Brussels-Hotel-Juliana-Hotel-Brussels.h67403455.Description-Hotel?startDate=2026-09-04&endDate=2026-09-06&guestRating=40&adults=2&rooms=1&rm1=a2"
+      abritel:
+        description: "Fiche Abritel avec dates"
+        required: false
+        default: "https://www.abritel.fr/location-vacances/p1920942?startDate=2027-01-14&endDate=2027-01-17&chkin=2027-01-14&chkout=2027-01-17&adultsCount=2&gx-currency=EUR"
+
+jobs:
+  dig:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: expedia
+            engine: cloak
+          - name: abritel
+            engine: impit
+          - name: abritel-cloak
+            engine: cloak
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: "${{ matrix.name }} (${{ matrix.engine }}) — ou est le prix ?"
+        run: |
+          case "${{ matrix.name }}" in
+            expedia) URL="${{ inputs.expedia }}" ;;
+            *)       URL="${{ inputs.abritel }}" ;;
+          esac
+          node .github/scripts/price-dig.mjs "$URL" "${{ matrix.engine }}"
