@@ -13,7 +13,7 @@
  * Sort en 0 si AU MOINS un moteur résout un nom via le profil lodging,
  * en 1 si aucun (site bloqué ou page vide sans JS → moteur browser requis).
  */
-import { plainFetch, impitFetch } from '../../netlify/lib/common.mts'
+import { plainFetch, impitFetch, socialFetch } from '../../netlify/lib/common.mts'
 import {
   extractMetas,
   extractJsonLd,
@@ -29,7 +29,8 @@ if (!url) {
 }
 console.log(`URL : ${url}`)
 
-const engines = { plain: plainFetch, impit: impitFetch } as const
+// Ordre de la chaîne `auto` : le moins cher d'abord.
+const engines = { social: socialFetch, impit: impitFetch, plain: plainFetch } as const
 const ruleEntries = Object.entries(PROFILES.lodging).filter(([f]) => !f.startsWith('$'))
 const passed: string[] = []
 

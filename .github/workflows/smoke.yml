@@ -24,7 +24,7 @@ jobs:
   # lodging) exécuté sur le runner contre l'URL cible — aucune clé requise,
   # ne dépend pas du déploiement. Vert = un moteur sans navigateur suffit.
   engines-offline:
-    name: "Moteurs plain+impit (code exécuté sur le runner, sans clé)"
+    name: "Moteurs sans navigateur (code exécuté sur le runner, sans clé)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
           node-version: 22
       - name: "Dépendances (impit)"
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: "Fetch plain + impit, extraction profil lodging"
+      - name: "Fetch social + impit + plain, extraction profil lodging"
         env:
           TARGET_URL: ${{ inputs.url }}
         run: npx --yes tsx@4.19.2 .github/scripts/test-engines.mts "$TARGET_URL"
