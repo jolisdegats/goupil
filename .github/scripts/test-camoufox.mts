@@ -69,8 +69,28 @@ console.log(JSON.stringify(data, null, 2))
 const resolved = Object.entries(data).filter(([, v]) => v !== null)
 console.log(`→ ${resolved.length}/${ruleEntries.length} champs résolus : ${resolved.map(([f]) => f).join(', ') || '(aucun)'}`)
 
-if (data.name == null) {
-  console.log('\nVERDICT: FAIL — Camoufox rend la page mais aucune donnée exploitable depuis une IP datacenter → il faut un proxy résidentiel')
+// Un og:title de home générique ne prouve RIEN : un OTA qui soft-bloque
+// renvoie un 200 avec une page leurre. On exige un signal de VRAIE fiche :
+// soit un nœud JSON-LD de type hébergement, soit un champ structuré
+// (ville/note/avis/géo) — pas juste un nom tiré d'une meta générique.
+const LODGING_TYPES = ['hotel', 'vacationrental', 'lodgingbusiness', 'product', 'apartment', 'resort']
+const hasLodgingJsonld = jsonld.some((n) => {
+  const t = (n as Record<string, unknown> | null)?.['@type']
+  const arr = Array.isArray(t) ? t : [t]
+  return arr.some((x) => typeof x === 'string' && LODGING_TYPES.includes(x.toLowerCase()))
+})
+const strong = ['city', 'country', 'latitude', 'longitude', 'rating', 'reviewCount'].filter(
+  (f) => data[f] != null
+)
+const real = data.name != null && (hasLodgingJsonld || strong.length > 0)
+
+if (!real) {
+  console.log(
+    `\nVERDICT: FAIL — page rendue mais pas de VRAIE fiche (jsonld hébergement: ${hasLodgingJsonld}, champs forts: ${strong.length}).` +
+      ' Probable soft-block : l\'OTA sert une page générique/leurre depuis une IP datacenter → il faut un proxy résidentiel.'
+  )
   process.exit(1)
 }
-console.log('\nVERDICT: PASS — Camoufox suffit depuis une IP datacenter (pas besoin de proxy résidentiel) 🎉')
+console.log(
+  `\nVERDICT: PASS — VRAIE fiche extraite depuis une IP datacenter (jsonld: ${hasLodgingJsonld}, champs forts: ${strong.join(',') || 'aucun'}) → pas besoin de proxy résidentiel 🎉`
+)
