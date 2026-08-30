@@ -20,7 +20,10 @@
   # playwright-core from node_modules at runtime — keep them out of the esbuild
   # bundle and ship them as-is inside the function package.
   external_node_modules = ["camoufox-js", "playwright-core"]
-  included_files = ["scripts/**"]
+  # data-files (territoryInfo.xml, webgl_data.db — ~416K) are read at runtime
+  # by camoufox-js but not referenced from JS imports, so the bundler skips
+  # them unless forced in.
+  included_files = ["scripts/**", "node_modules/camoufox-js/dist/data-files/**"]
 
 # No previews needed for an API service — don't burn build credits.
 [context.deploy-preview]

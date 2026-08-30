@@ -126,6 +126,9 @@ export async function renderPage(url: string): Promise<WorkerResult> {
     const { stdout } = await execFileAsync('node', [workerPath, url], {
       timeout: 85_000,
       maxBuffer: 10 * 1024 * 1024,
+      // Lambda: only /tmp is writable. camoufox-js resolves its cache
+      // (browser download, addons) under $HOME/.cache — point it there.
+      env: { ...process.env, HOME: '/tmp', XDG_CACHE_HOME: '/tmp/.cache' },
     })
     const result = JSON.parse(stdout) as { html?: string; error?: string }
     if (result.error || typeof result.html !== 'string') {
