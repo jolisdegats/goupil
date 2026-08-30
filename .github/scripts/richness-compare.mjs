@@ -15,6 +15,19 @@ if (!engine || !url) {
 }
 
 async function getHtml() {
+  if (engine === 'cloak') {
+    const mod = await import('httpcloak')
+    const httpcloak = mod.default ?? mod
+    const session = new httpcloak.Session({ preset: 'chrome-latest-windows' })
+    try {
+      const r = await session.get(url)
+      const raw = typeof r.text === 'function' ? await r.text() : (r.body ?? r.text ?? r.content ?? '')
+      console.log(`(cloak: HTTP ${r.statusCode})`)
+      return typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8')
+    } finally {
+      try { session?.close?.() } catch {}
+    }
+  }
   if (engine === 'browser') {
     const { Camoufox } = await import('camoufox-js')
     const browser = await Camoufox({ headless: true, humanize: true })
@@ -82,12 +95,19 @@ const allImgs = [
   ),
 ]
 const cdnImgs = allImgs.filter((u) => /bstatic\.com|trvl-media\.com|muscache\.com|vrbo\.com|expedia/i.test(u))
-// Les photos de fiche Booking vivent sous /images/hotel/
-const listingPhotos = cdnImgs.filter((u) => /\/images\/hotel\/|\/xdata\/images\/hotel\//i.test(u))
+// Photos de fiche : Booking sous /images/hotel/, Expedia sous /lodging/ ou /images/
+const listingPhotos = cdnImgs.filter((u) =>
+  /\/images\/hotel\/|\/xdata\/images\/hotel\/|\/lodging\/|trvl-media\.com\/(?:hotels|lodging)\//i.test(u)
+)
+// Dédup par identifiant de photo : les OTA servent la même image en N tailles.
+const uniqueIds = new Set(
+  listingPhotos.map((u) => u.match(/\/(\d{6,})\.(?:jpe?g|webp|png)/i)?.[1] ?? u.split('?')[0])
+)
 console.log('\n── PHOTOS ──')
 console.log('images totales trouvées   :', allImgs.length)
 console.log('images CDN hébergeur      :', cdnImgs.length)
 console.log('photos de la fiche        :', listingPhotos.length)
+console.log('photos UNIQUES (dédup)    :', uniqueIds.size)
 listingPhotos.slice(0, 5).forEach((u) => console.log('   -', u.slice(0, 110)))
 
 // ── PRIX ───────────────────────────────────────────────────────────────────
@@ -128,9 +148,10 @@ console.log(
   JSON.stringify({
     engine,
     jsonldHotel: !!hotel,
-    photosFiche: listingPhotos.length,
+    photosUniques: uniqueIds.size,
     prix: priceFound,
     note: hotel?.aggregateRating?.ratingValue ?? null,
-    geo: !!hotel?.geo,
+    geo: !!hotel?.geo || /["']lat(?:itude)?["']\s*:/.test(html),
+    nom: hotel?.name ?? meta['og:title'] ?? null,
   })
 )

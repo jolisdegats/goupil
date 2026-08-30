@@ -1,0 +1,28 @@
+name: expedia-listing
+# LE test qui tranche pour Expedia : une VRAIE fiche hôtel (URL fournie par
+# l'utilisatrice, donc vivante — notre première URL de test était morte) rend-
+# elle des données exploitables via le moteur cloak, depuis une IP datacenter ?
+# L'URL porte des dates, donc on saura aussi pour le prix.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Fiche Expedia (avec dates)"
+        required: false
+        default: "https://www.expedia.fr/Brussels-Hotel-Juliana-Hotel-Brussels.h67403455.Description-Hotel?startDate=2026-09-04&endDate=2026-09-06&guestRating=40&adults=2&rooms=1&rm1=a2"
+
+jobs:
+  listing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: "cloak — la fiche complète"
+        run: node .github/scripts/richness-compare.mjs cloak "${{ inputs.url }}"
+      - name: "social (témoin — devrait échouer sur Expedia)"
+        continue-on-error: true
+        run: node .github/scripts/richness-compare.mjs social "${{ inputs.url }}"
