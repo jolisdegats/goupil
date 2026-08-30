@@ -20,7 +20,7 @@
  * The service stays app-agnostic: it knows mechanisms (meta / jsonld / regex),
  * never platforms.
  */
-import { checkAuth, isSafeUrl, renderPage, plainFetch } from '../lib/common.mts'
+import { checkAuth, isSafeUrl, isEngine, fetchWithEngine } from '../lib/common.mts'
 import { PROFILES } from '../lib/profiles.mts'
 
 export const config = { path: '/extract' }
@@ -208,10 +208,10 @@ export default async (req: Request): Promise<Response> => {
     autoSections = AUTO_SECTIONS.filter((s) => autoParam.includes(s))
   }
 
-  if (engine !== undefined && engine !== 'browser' && engine !== 'plain') {
+  if (engine !== undefined && !isEngine(engine)) {
     return Response.json({ error: 'invalid_engine' }, { status: 400 })
   }
-  const rendered = engine === 'plain' ? await plainFetch(url) : await renderPage(url)
+  const rendered = await fetchWithEngine(isEngine(engine) ? engine : 'browser', url)
   if ('error' in rendered) {
     return Response.json({ error: 'fetch_failed', detail: rendered.error }, { status: rendered.status })
   }

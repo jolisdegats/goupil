@@ -164,3 +164,36 @@ export async function plainFetch(url: string): Promise<WorkerResult> {
     return { error: err instanceof Error ? err.message : String(err), status: 502 }
   }
 }
+
+/**
+ * impit fetch — Chrome TLS impersonation WITHOUT a browser (Rust bindings, a
+ * few MB: serverless-friendly). The middle engine: gets past TLS-fingerprint
+ * walls that 429 Node's native fetch, with none of Camoufox's disk footprint.
+ * Kept identical to the call proven from AWS IPs in production elsewhere.
+ */
+export async function impitFetch(url: string): Promise<WorkerResult> {
+  try {
+    const { Impit } = await import('impit')
+    const impit = new Impit({ browser: 'chrome' })
+    const res = await impit.fetch(url)
+    if (!res.ok) return { error: `http_${res.status}`, status: 502 }
+    return { html: await res.text() }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err), status: 502 }
+  }
+}
+
+// ── Engine dispatch ─────────────────────────────────────────────────────────
+
+export const ENGINES = ['browser', 'plain', 'impit'] as const
+export type Engine = (typeof ENGINES)[number]
+
+export function isEngine(value: unknown): value is Engine {
+  return typeof value === 'string' && (ENGINES as readonly string[]).includes(value)
+}
+
+export async function fetchWithEngine(engine: Engine, url: string): Promise<WorkerResult> {
+  if (engine === 'plain') return plainFetch(url)
+  if (engine === 'impit') return impitFetch(url)
+  return renderPage(url)
+}

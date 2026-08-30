@@ -12,29 +12,31 @@ on:
         required: false
         default: "https://www.expedia.fr/Paris-Hotel-Paris-Marriott-Rive-Gauche-Hotel-Conference-Center.h6620.Hotel-Information"
       engine:
-        description: "Moteur pour le test authentifié (plain|browser — browser ne peut pas marcher sur Netlify, /tmp trop petit)"
+        description: "Moteur pour le test authentifié (impit|plain|browser — browser ne peut pas marcher sur Netlify, /tmp trop petit)"
         required: false
-        default: "plain"
+        default: "impit"
 
 env:
   BASE: https://goupil-fetcher.netlify.app
 
 jobs:
-  # Le vrai code du service (plainFetch + extracteurs + profil lodging) exécuté
-  # sur le runner contre l'URL cible — aucune clé requise, ne dépend pas du
-  # déploiement. Vert = le site livre sa donnée sans JavaScript.
-  plain-offline:
-    name: "Moteur plain (code exécuté sur le runner, sans clé)"
+  # Le vrai code du service (plainFetch/impitFetch + extracteurs + profil
+  # lodging) exécuté sur le runner contre l'URL cible — aucune clé requise,
+  # ne dépend pas du déploiement. Vert = un moteur sans navigateur suffit.
+  engines-offline:
+    name: "Moteurs plain+impit (code exécuté sur le runner, sans clé)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: "Fetch plain + extraction profil lodging"
+      - name: "Dépendances (impit)"
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: "Fetch plain + impit, extraction profil lodging"
         env:
           TARGET_URL: ${{ inputs.url }}
-        run: npx --yes tsx@4.19.2 .github/scripts/test-plain.mts "$TARGET_URL"
+        run: npx --yes tsx@4.19.2 .github/scripts/test-engines.mts "$TARGET_URL"
 
   smoke:
     name: "Service déployé"
