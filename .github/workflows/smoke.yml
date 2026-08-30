@@ -10,11 +10,11 @@ on:
       url:
         description: "URL à extraire"
         required: false
-        default: "https://www.expedia.fr/Paris-Hotel-Paris-Marriott-Rive-Gauche-Hotel-Conference-Center.h6620.Hotel-Information"
+        default: "https://www.booking.com/hotel/fr/le-bristol-paris.html"
       engine:
-        description: "Moteur pour le test authentifié (impit|plain|browser — browser ne peut pas marcher sur Netlify, /tmp trop petit)"
+        description: "Moteur (auto|social|impit|plain|browser — browser impossible sur Netlify, /tmp trop petit)"
         required: false
-        default: "impit"
+        default: "auto"
 
 env:
   BASE: https://goupil-fetcher.netlify.app
