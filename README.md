@@ -40,14 +40,42 @@ photos, même JSON-LD.
   `server.mts` (voir « Hébergement conteneurisé »). En pratique il n'a servi à
   rien de plus que `social` sur les cibles testées.
 
+- **`managed`** — délégué à [ScraperAPI](https://www.scraperapi.com), qui
+  fournit les proxies résidentiels rotatifs et résout les challenges. Le seul
+  moteur qui atteint les cibles refusant toute IP datacenter. **Consomme des
+  crédits payants** (une page protégée vaut 25-75 crédits sur un quota gratuit
+  de 1000/mois) → la chaîne `auto` ne l'essaie qu'en tout dernier, après avoir
+  épuisé les moteurs gratuits. Inerte sans `SCRAPERAPI_KEY`.
+
 ### Ce qui résiste
 
 Certains sites (Expedia) refusent **toute** IP datacenter : `429 / « Robot ou
 pas robot ? »` sur le domaine entier, page d'accueil comprise, quel que soit le
 moteur — navigateur furtif inclus, et pareil avec Patchright (Chromium patché).
 Le mur porte sur l'IP, pas sur le navigateur : aucun hébergeur (gratuit ou non)
-n'y change quoi que ce soit, seule une **IP résidentielle** (proxy rotatif,
-payant) passerait. `impit` accepte un `proxyUrl` si ce besoin se présente.
+n'y change quoi que ce soit. Seule une **IP résidentielle** passe, d'où le
+moteur `managed` (ou un `proxyUrl` sur `impit`, qui l'accepte nativement).
+
+## Variables d'environnement
+
+| Variable | Rôle |
+|---|---|
+| `API_KEY` | **requise** — clé attendue en `x-api-key`. Sans elle le service répond 503 (fail-closed). |
+| `SCRAPERAPI_KEY` | optionnelle — active le moteur `managed` et son maillon dans la chaîne `auto`. |
+| `GOUPIL_BROWSER=1` | optionnelle — autorise le moteur `browser` dans la chaîne `auto`. À ne poser **que** sur un hôte conteneurisé : sur une Lambda le navigateur échoue après un long téléchargement inutile. |
+
+## Hébergement conteneurisé (optionnel)
+
+`server.mts` expose la même API (`/fetch`, `/extract`, plus `GET /` en
+healthcheck) dans un simple serveur Node, pour un hôte où le navigateur est
+réellement installable (Docker, VM, Render, Fly.io…) :
+
+```bash
+API_KEY=… GOUPIL_BROWSER=1 npx tsx server.mts   # écoute sur $PORT (défaut 8080)
+```
+
+Non nécessaire aujourd'hui : sur les cibles testées, le navigateur n'apporte
+rien de plus que `social`.
 
 ## API
 

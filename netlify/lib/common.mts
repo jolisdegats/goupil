@@ -222,9 +222,43 @@ export async function socialFetch(url: string): Promise<WorkerResult> {
   }
 }
 
+/**
+ * Fetch délégué à un service tiers (ScraperAPI) qui gère lui-même les proxies
+ * résidentiels rotatifs et les challenges anti-bot.
+ *
+ * Seule voie connue vers les cibles qui refusent toute IP datacenter (Expedia
+ * et son Akamai Bot Manager : 429 « Robot ou pas robot » sur le domaine
+ * entier, navigateur furtif compris). On n'imite rien nous-mêmes : le
+ * prestataire opère sous ses propres conditions et c'est lui qui détient
+ * l'infrastructure d'IP.
+ *
+ * COÛTEUX EN CRÉDITS (une page protégée peut valoir 25-75 crédits sur un quota
+ * gratuit de 1000/mois) → à n'appeler qu'en DERNIER recours ; la chaîne `auto`
+ * le place après tous les moteurs gratuits. Inerte sans SCRAPERAPI_KEY.
+ */
+export async function managedFetch(url: string): Promise<WorkerResult> {
+  const key = process.env.SCRAPERAPI_KEY
+  if (!key) return { error: 'managed_not_configured', status: 502 }
+  const endpoint = new URL('https://api.scraperapi.com/')
+  endpoint.searchParams.set('api_key', key)
+  endpoint.searchParams.set('url', url)
+  endpoint.searchParams.set('render', 'true')
+  // ultra_premium = proxies résidentiels + résolution des challenges : le seul
+  // niveau qui passe Akamai. C'est aussi le plus cher en crédits.
+  endpoint.searchParams.set('ultra_premium', 'true')
+  endpoint.searchParams.set('country_code', 'fr')
+  try {
+    const res = await fetch(endpoint, { signal: AbortSignal.timeout(90_000) })
+    if (!res.ok) return { error: `managed_http_${res.status}`, status: 502 }
+    return { html: await res.text() }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err), status: 502 }
+  }
+}
+
 // ── Engine dispatch ─────────────────────────────────────────────────────────
 
-export const ENGINES = ['auto', 'browser', 'plain', 'impit', 'social'] as const
+export const ENGINES = ['auto', 'browser', 'plain', 'impit', 'social', 'managed'] as const
 export type Engine = (typeof ENGINES)[number]
 
 export function isEngine(value: unknown): value is Engine {
@@ -252,8 +286,13 @@ export async function autoFetch(url: string): Promise<WorkerResult> {
     ['social', socialFetch],
     ['impit', impitFetch],
     ['plain', plainFetch],
-    ['browser', renderPage],
   ]
+  // Le navigateur ne tourne que là où il est installable (conteneur/VM) : sur
+  // une Lambda il échouerait après un long téléchargement inutile. Opt-in.
+  if (process.env.GOUPIL_BROWSER === '1') chain.push(['browser', renderPage])
+  // Dernier recours seulement : chaque appel consomme des crédits payants.
+  if (process.env.SCRAPERAPI_KEY) chain.push(['managed', managedFetch])
+
   let lastError = 'no_engine_succeeded'
   for (const [name, fetcher] of chain) {
     const result = await fetcher(url)
@@ -276,5 +315,6 @@ export async function fetchWithEngine(engine: Engine, url: string): Promise<Work
   if (engine === 'plain') return plainFetch(url)
   if (engine === 'impit') return impitFetch(url)
   if (engine === 'social') return socialFetch(url)
+  if (engine === 'managed') return managedFetch(url)
   return renderPage(url)
 }
