@@ -40,3 +40,6 @@ jobs:
       - name: "Booking (témoin) — chrome-latest"
         continue-on-error: true
         run: node .github/scripts/httpcloak-test.mjs "${{ inputs.booking }}" chrome-latest
+      - name: "Expedia — VRAIE fiche (IDs extraits du JSON de recherche)"
+        continue-on-error: true
+        run: node .github/scripts/expedia-listing.mjs

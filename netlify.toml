@@ -19,7 +19,9 @@
   # The worker runs as a real `node` subprocess and resolves camoufox-js /
   # playwright-core from node_modules at runtime — keep them out of the esbuild
   # bundle and ship them as-is inside the function package.
-  external_node_modules = ["camoufox-js", "playwright-core", "impit"]
+  # Modules à binaire natif : esbuild ne doit pas tenter de les inliner.
+  # httpcloak charge sa lib Go (.so) via koffi au runtime.
+  external_node_modules = ["camoufox-js", "playwright-core", "impit", "httpcloak", "koffi"]
   # data-files (territoryInfo.xml, webgl_data.db — ~416K) are read at runtime
   # by camoufox-js but not referenced from JS imports, so the bundler skips
   # them unless forced in.

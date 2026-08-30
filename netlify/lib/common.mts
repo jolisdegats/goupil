@@ -223,6 +223,56 @@ export async function socialFetch(url: string): Promise<WorkerResult> {
 }
 
 /**
+ * Fetch avec empreinte de navigateur COMPLÈTE : TLS (JA3/JA4), HTTP/2 (ordre
+ * des frames, priorités — l'« empreinte Akamai »), et pile TCP/IP (TTL, window
+ * scale, MSS). Même famille qu'`impit`, mais nettement plus profond.
+ *
+ * Mesuré : là où `impit` reçoit un 429 « Robot ou pas robot » d'Expedia,
+ * httpcloak obtient un 200 avec la page réelle (500 Ko sur l'accueil, 1,2 Mo
+ * sur la recherche). Le mur d'Akamai portait donc sur l'empreinte transport,
+ * pas sur la réputation de l'IP comme on l'a longtemps cru.
+ *
+ * ~16 Mo de binaire natif utile (Linux x64) : tient sans problème dans une
+ * function Netlify.
+ */
+export async function cloakFetch(url: string): Promise<WorkerResult> {
+  let session: { get: (u: string) => Promise<unknown>; close?: () => void } | undefined
+  try {
+    const mod = (await import('httpcloak')) as unknown as {
+      default?: { Session: new (o: unknown) => never }
+      Session?: new (o: unknown) => never
+    }
+    const httpcloak = mod.default ?? mod
+    const Session = (httpcloak as { Session: new (o: unknown) => never }).Session
+    session = new Session({ preset: 'chrome-latest-windows' }) as unknown as typeof session
+    const res = (await session!.get(url)) as {
+      statusCode: number
+      body?: unknown
+      text?: unknown
+      content?: unknown
+    }
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      return { error: `http_${res.statusCode}`, status: 502 }
+    }
+    // Le corps arrive en Buffer selon les versions.
+    const raw =
+      typeof res.text === 'function'
+        ? await (res.text as () => Promise<string>)()
+        : (res.body ?? res.text ?? res.content ?? '')
+    const html = typeof raw === 'string' ? raw : Buffer.from(raw as Uint8Array).toString('utf8')
+    return { html }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err), status: 502 }
+  } finally {
+    try {
+      session?.close?.()
+    } catch {
+      /* rien à faire */
+    }
+  }
+}
+
+/**
  * Fetch délégué à un service tiers (ScraperAPI) qui gère lui-même les proxies
  * résidentiels rotatifs et les challenges anti-bot.
  *
@@ -258,7 +308,7 @@ export async function managedFetch(url: string): Promise<WorkerResult> {
 
 // ── Engine dispatch ─────────────────────────────────────────────────────────
 
-export const ENGINES = ['auto', 'browser', 'plain', 'impit', 'social', 'managed'] as const
+export const ENGINES = ['auto', 'browser', 'plain', 'impit', 'social', 'cloak', 'managed'] as const
 export type Engine = (typeof ENGINES)[number]
 
 export function isEngine(value: unknown): value is Engine {
@@ -283,7 +333,11 @@ function looksBlocked(html: string): boolean {
  */
 export async function autoFetch(url: string): Promise<WorkerResult> {
   const chain: Array<[Engine, (u: string) => Promise<WorkerResult>]> = [
+    // `social` d'abord : le plus léger, et le seul qui obtienne la fiche
+    // complète de Booking (les sites servent leurs métadonnées aux robots
+    // d'aperçu). `cloak` ensuite : plus lourd, mais seul à passer Akamai.
     ['social', socialFetch],
+    ['cloak', cloakFetch],
     ['impit', impitFetch],
     ['plain', plainFetch],
   ]
@@ -315,6 +369,7 @@ export async function fetchWithEngine(engine: Engine, url: string): Promise<Work
   if (engine === 'plain') return plainFetch(url)
   if (engine === 'impit') return impitFetch(url)
   if (engine === 'social') return socialFetch(url)
+  if (engine === 'cloak') return cloakFetch(url)
   if (engine === 'managed') return managedFetch(url)
   return renderPage(url)
 }
