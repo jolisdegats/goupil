@@ -1,0 +1,30 @@
+name: expedia-navigate
+# Test Expedia HONNÊTE : notre URL de fiche était morte (elle redirige vers
+# /Hotels même depuis un navigateur et une IP résidentielle). Ici on navigue
+# comme un humain — accueil → recherche → premier résultat — pour tester une
+# fiche forcément valide, découverte sur le site lui-même.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Fiche Expedia à tester directement (laisser vide pour naviguer depuis l'accueil)"
+        required: false
+        default: ""
+
+jobs:
+  navigate:
+    runs-on: ubuntu-latest
+    env:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx --yes playwright@1.58.2 install-deps firefox
+      - run: npx --yes camoufox-js fetch
+      - name: "Expedia — navigation réelle (Camoufox)"
+        run: node .github/scripts/expedia-navigate.mjs "${{ inputs.url }}"

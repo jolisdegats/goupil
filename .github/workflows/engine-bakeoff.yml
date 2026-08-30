@@ -85,24 +85,34 @@ jobs:
 
       # LA question annexe : est-ce que ça tiendrait dans le /tmp d'une Lambda
       # Netlify (512 Mo) ? Si oui, aucun nouvel hébergement n'est nécessaire.
-      - name: "Mesurer l'empreinte disque réelle"
+      # On n'embarque QU'UN navigateur : `install chromium` en pose deux côte à
+      # côte (complet + headless shell) plus ffmpeg. En headless, seul le
+      # headless shell est nécessaire — c'est LUI qu'il faut comparer aux
+      # 512 Mo, pas la somme du cache.
+      - name: "Mesurer l'empreinte disque réelle (par navigateur)"
         run: |
-          echo "── navigateurs installés ──"
           CACHE="${HOME}/.cache/ms-playwright"
           [ -d "$CACHE" ] || CACHE=$(find / -maxdepth 6 -type d -name "ms-playwright" 2>/dev/null | head -1)
           echo "cache: $CACHE"
-          du -sh "$CACHE" 2>/dev/null || echo "(cache introuvable)"
+          echo "── contenu (tout ce que playwright a posé) ──"
           du -sh "$CACHE"/* 2>/dev/null | sort -h
-          echo "── node_modules/patchright ──"
-          du -sh node_modules/patchright node_modules/patchright-core 2>/dev/null
-          echo "── TOTAL à embarquer (navigateur + lib) ──"
-          TOTAL_KB=$(( $(du -sk "$CACHE" 2>/dev/null | cut -f1) + $(du -sk node_modules/patchright node_modules/patchright-core 2>/dev/null | awk '{s+=$1} END {print s+0}') ))
-          echo "total: $((TOTAL_KB / 1024)) Mo"
-          if [ "$TOTAL_KB" -lt 460000 ]; then
-            echo "✅ TIENT dans le /tmp d'une Lambda Netlify (512 Mo) → aucun nouvel hébergement nécessaire"
-          else
-            echo "❌ NE TIENT PAS dans 512 Mo → hébergement conteneurisé requis"
-          fi
+          LIBS_KB=$(du -sk node_modules/patchright node_modules/patchright-core 2>/dev/null | awk '{s+=$1} END {print s+0}')
+          SHELL_KB=$(du -sk "$CACHE"/chromium_headless_shell-* 2>/dev/null | awk '{s+=$1} END {print s+0}')
+          FULL_KB=$(du -sk "$CACHE"/chromium-* 2>/dev/null | awk '{s+=$1} END {print s+0}')
+          echo "── ce qu'il faudrait RÉELLEMENT embarquer ──"
+          echo "libs patchright        : $((LIBS_KB / 1024)) Mo"
+          echo "headless shell seul    : $((SHELL_KB / 1024)) Mo  → total $(((SHELL_KB + LIBS_KB) / 1024)) Mo"
+          echo "chromium complet seul  : $((FULL_KB / 1024)) Mo  → total $(((FULL_KB + LIBS_KB) / 1024)) Mo"
+          echo "── verdict vs /tmp Lambda (512 Mo, marge de sécurité 460 Mo) ──"
+          for name in "headless-shell:$((SHELL_KB + LIBS_KB))" "chromium-complet:$((FULL_KB + LIBS_KB))"; do
+            label="${name%%:*}"; kb="${name##*:}"
+            if [ "$kb" -gt 0 ] && [ "$kb" -lt 460000 ]; then
+              echo "✅ $label ($((kb / 1024)) Mo) TIENT dans 512 Mo"
+            else
+              echo "❌ $label ($((kb / 1024)) Mo) ne tient pas"
+            fi
+          done
+          echo "NB : tenir sur le disque ne suffit pas — il faut aussi le télécharger à chaque cold start (lent) et assez de RAM pour lancer le navigateur."
       - name: "Expedia — Patchright"
         continue-on-error: true
         run: node .github/scripts/engine-bakeoff.mjs patchright "${{ inputs.expedia }}"
