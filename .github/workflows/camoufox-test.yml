@@ -27,8 +27,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: "Dépendances npm"
-        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: "Dépendances npm (avec scripts : better-sqlite3 natif requis par Camoufox)"
+        run: npm ci --no-audit --no-fund
+      - name: "Sanity : bindings natifs chargeables"
+        run: node -e "require('better-sqlite3'); import('camoufox-js').then(()=>console.log('camoufox-js + better-sqlite3 OK'))"
       - name: "Libs système Firefox (pour Camoufox)"
         run: npx --yes playwright@1.58.2 install-deps firefox
       - name: "Télécharger Camoufox (~663 Mo)"
