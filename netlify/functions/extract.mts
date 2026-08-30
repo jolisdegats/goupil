@@ -50,7 +50,7 @@ export default async (req: Request): Promise<Response> => {
   const invalid = validateExtractionRequest({ rules, profile })
   if (invalid) return Response.json(invalid.body, { status: invalid.status })
 
-  const rendered = await fetchWithEngine(isEngine(engine) ? engine : 'browser', url)
+  const rendered = await fetchWithEngine(isEngine(engine) ? engine : 'auto', url)
   if ('error' in rendered) {
     return Response.json(
       { error: 'fetch_failed', detail: rendered.error },

@@ -193,17 +193,88 @@ export async function impitFetch(url: string): Promise<WorkerResult> {
   }
 }
 
+/**
+ * Fetch en se présentant comme le crawler d'aperçu de liens de Facebook.
+ *
+ * Ce n'est pas un déguisement gratuit : les sites SERVENT VOLONTAIREMENT leurs
+ * métadonnées (OpenGraph, JSON-LD) à ces robots — c'est ainsi que se
+ * fabriquent les vignettes partagées sur les réseaux. Mesuré : Booking.com
+ * répond 200 avec sa fiche complète (JSON-LD Hotel + og:image) là où il sert
+ * une coquille vide à un fetch ordinaire, et sans aucun navigateur.
+ *
+ * Le moteur le moins cher qui obtient de vraies données : pas de navigateur,
+ * pas de contrainte de disque, quelques centaines de millisecondes.
+ */
+export async function socialFetch(url: string): Promise<WorkerResult> {
+  try {
+    const { Impit } = await import('impit')
+    const impit = new Impit({ browser: 'chrome' })
+    const res = await impit.fetch(url, {
+      headers: {
+        'user-agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+        accept: 'text/html,application/xhtml+xml,*/*;q=0.8',
+      },
+    })
+    if (!res.ok) return { error: `http_${res.status}`, status: 502 }
+    return { html: await res.text() }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err), status: 502 }
+  }
+}
+
 // ── Engine dispatch ─────────────────────────────────────────────────────────
 
-export const ENGINES = ['browser', 'plain', 'impit'] as const
+export const ENGINES = ['auto', 'browser', 'plain', 'impit', 'social'] as const
 export type Engine = (typeof ENGINES)[number]
 
 export function isEngine(value: unknown): value is Engine {
   return typeof value === 'string' && (ENGINES as readonly string[]).includes(value)
 }
 
+/** Un résultat vide de données utiles ne vaut pas mieux qu'une erreur. */
+function looksBlocked(html: string): boolean {
+  if (/robot ou pas robot|bot or not|are you a robot|px-captcha|unusual traffic/i.test(html.slice(0, 200_000)))
+    return true
+  // Ni schema.org d'hébergement, ni og:title → rien à extraire.
+  const hasJsonLd = /application\/ld\+json/i.test(html)
+  const hasOg = /property=["']og:(title|image)["']/i.test(html)
+  return !hasJsonLd && !hasOg
+}
+
+/**
+ * Chaîne `auto` : du moins cher au plus cher, on s'arrête au premier moteur
+ * qui rend des données exploitables. Sans navigateur d'abord (quelques
+ * centaines de ms), navigateur en dernier recours — et seulement là où il est
+ * installable.
+ */
+export async function autoFetch(url: string): Promise<WorkerResult> {
+  const chain: Array<[Engine, (u: string) => Promise<WorkerResult>]> = [
+    ['social', socialFetch],
+    ['impit', impitFetch],
+    ['plain', plainFetch],
+    ['browser', renderPage],
+  ]
+  let lastError = 'no_engine_succeeded'
+  for (const [name, fetcher] of chain) {
+    const result = await fetcher(url)
+    if ('error' in result) {
+      lastError = `${name}: ${result.error}`
+      continue
+    }
+    if (looksBlocked(result.html)) {
+      lastError = `${name}: blocked_or_empty`
+      continue
+    }
+    console.log(`[goupil] auto → ${name} a réussi`)
+    return result
+  }
+  return { error: lastError, status: 502 }
+}
+
 export async function fetchWithEngine(engine: Engine, url: string): Promise<WorkerResult> {
+  if (engine === 'auto') return autoFetch(url)
   if (engine === 'plain') return plainFetch(url)
   if (engine === 'impit') return impitFetch(url)
+  if (engine === 'social') return socialFetch(url)
   return renderPage(url)
 }

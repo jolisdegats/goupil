@@ -34,7 +34,7 @@ export default async (req: Request): Promise<Response> => {
   if (engine !== undefined && !isEngine(engine)) {
     return Response.json({ error: 'invalid_engine' }, { status: 400 })
   }
-  const rendered = await fetchWithEngine(isEngine(engine) ? engine : 'browser', url)
+  const rendered = await fetchWithEngine(isEngine(engine) ? engine : 'auto', url)
   if ('error' in rendered) {
     console.error('[goupil] worker failed:', rendered.error)
     return Response.json({ error: 'fetch_failed', detail: rendered.error }, { status: rendered.status })

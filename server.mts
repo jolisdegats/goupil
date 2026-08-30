@@ -11,7 +11,7 @@
  * authentifié — la plateforme doit pouvoir le pinger sans clé.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { checkAuthHeaders, isSafeUrl, isEngine, fetchWithEngine } from './netlify/lib/common.mts'
+import { checkAuthHeaders, isSafeUrl, isEngine, fetchWithEngine, ENGINES } from './netlify/lib/common.mts'
 import { extractFromHtml, validateExtractionRequest } from './netlify/lib/extraction.mts'
 
 const PORT = Number(process.env.PORT ?? 8080)
@@ -56,7 +56,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // Healthcheck (la plateforme ping cette route ; pas d'auth pour ne pas la
   // casser, et rien de sensible dedans).
   if (req.method === 'GET' && (path === '/' || path === '/health')) {
-    return send(res, 200, { service: 'goupil', ok: true, engines: ['browser', 'plain', 'impit'] })
+    return send(res, 200, { service: 'goupil', ok: true, engines: [...ENGINES] })
   }
   if (path !== '/fetch' && path !== '/extract') {
     return send(res, 404, { error: 'not_found' })
@@ -87,7 +87,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   const invalid = validateExtractionRequest({ rules, profile })
   if (invalid) return send(res, invalid.status, invalid.body)
 
-  const rendered = await fetchWithEngine(isEngine(engine) ? engine : 'browser', url)
+  const rendered = await fetchWithEngine(isEngine(engine) ? engine : 'auto', url)
   if ('error' in rendered) {
     console.error('[goupil] fetch failed:', rendered.error)
     return send(res, rendered.status, { error: 'fetch_failed', detail: rendered.error })
