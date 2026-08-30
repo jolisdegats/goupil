@@ -26,3 +26,5 @@ jobs:
       - name: "social (témoin — devrait échouer sur Expedia)"
         continue-on-error: true
         run: node .github/scripts/richness-compare.mjs social "${{ inputs.url }}"
+      - name: "Où vivent les données ? (JSON embarqué, état global, champs)"
+        run: node .github/scripts/expedia-dig.mjs "${{ inputs.url }}" Juliana

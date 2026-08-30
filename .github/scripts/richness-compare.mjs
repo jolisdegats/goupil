@@ -152,6 +152,6 @@ console.log(
     prix: priceFound,
     note: hotel?.aggregateRating?.ratingValue ?? null,
     geo: !!hotel?.geo || /["']lat(?:itude)?["']\s*:/.test(html),
-    nom: hotel?.name ?? meta['og:title'] ?? null,
+    nom: hotel?.name ?? html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)?.[1] ?? null,
   })
 )
