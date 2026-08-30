@@ -41,3 +41,14 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: "Airbnb — le prix est-il déjà dans l'état différé ?"
         run: node .github/scripts/airbnb-price.mjs "https://www.airbnb.com/rooms/602824612447596322"
+
+  prix-par-hotel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: "Expedia — rattacher un prix à UN hôtel"
+        run: node .github/scripts/expedia-price-match.mjs "Juliana Hotel & Spa" "Bruxelles"
