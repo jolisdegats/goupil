@@ -1,0 +1,40 @@
+name: camoufox-test
+# Test décisif : le moteur browser (Camoufox) passe-t-il les gros OTA depuis
+# une IP DATACENTER (le runner = mêmes conditions réseau que Fly.io) ?
+# Déclenchement manuel uniquement. N'appelle PAS le service déployé — installe
+# le vrai Camoufox ici et rend les pages localement. Gratuit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expedia:
+        description: "URL Expedia"
+        required: false
+        default: "https://www.expedia.fr/Paris-Hotel-Paris-Marriott-Rive-Gauche-Hotel-Conference-Center.h6620.Hotel-Information"
+      booking:
+        description: "URL Booking"
+        required: false
+        default: "https://www.booking.com/hotel/fr/le-bristol-paris.html"
+
+jobs:
+  camoufox:
+    runs-on: ubuntu-latest
+    env:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: "Dépendances npm"
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: "Libs système Firefox (pour Camoufox)"
+        run: npx --yes playwright@1.58.2 install-deps firefox
+      - name: "Télécharger Camoufox (~663 Mo)"
+        run: npx --yes camoufox-js fetch
+      - name: "Expedia — Camoufox depuis IP datacenter"
+        run: npx --yes tsx@4.19.2 .github/scripts/test-camoufox.mts "${{ inputs.expedia }}"
+      - name: "Booking — Camoufox depuis IP datacenter"
+        if: always()
+        run: npx --yes tsx@4.19.2 .github/scripts/test-camoufox.mts "${{ inputs.booking }}"
