@@ -2,34 +2,52 @@
 
 > *Goupil* : le nom du renard en ancien français — celui qui se faufile sans se faire remarquer et rapporte ce qu'on lui demande.
 
-Stealth browser fetch **as a service** : tu lui donnes une URL, il te rend le
-HTML de la page **après rendu JavaScript**, via [Camoufox](https://camoufox.com)
-(Firefox anti-détection, `humanize: true`). Agnostique : le service ne connaît
-aucune app consommatrice et ne parse rien — les appelants font leur propre
-extraction.
+Récupération de pages **as a service** : tu lui donnes une URL, il te rend le
+HTML — ou directement les champs que tu demandes, extraits sans LLM. Agnostique :
+le service ne connaît aucune app consommatrice ; ce sont les appelants qui
+disent quoi extraire.
 
-Tourne sur **Netlify Functions** (free tier) — avec une vraie limite apprise à
-la dure, voir « Moteurs » ci-dessous.
+Tourne sur **Netlify Functions** (free tier), sans navigateur — voir
+« Moteurs ».
 
 ## Moteurs (`engine`, par requête)
 
-- **`plain`** — fetch HTTP direct (headers réalistes, redirects suivis,
-  timeout 25 s), **sans navigateur**. Tourne partout, Netlify inclus. Suffit
-  dès que le site embarque sa donnée (JSON-LD / OpenGraph) dans le HTML
-  initial — très courant : c'est leur SEO. Limite connue : les sites derrière
-  Akamai & co (Expedia…) reconnaissent l'empreinte TLS de Node et répondent
-  429 avant même de servir la page.
+Contre-intuitif mais **mesuré** : le moteur le moins cher est celui qui obtient
+le plus. Sur Booking, un navigateur furtif complet (Camoufox, 663 Mo, ~15 s)
+rend *exactement* la même chose que `social` (~2 s, zéro navigateur) — mêmes
+photos, même JSON-LD.
+
+- **`auto`** (défaut) — essaie `social` → `impit` → `plain` → `browser` et
+  s'arrête au premier qui rend des données exploitables. Un 200 vide ou un mur
+  anti-bot ne compte pas comme un succès : la chaîne continue.
+- **`social`** — fetch en se présentant comme le crawler d'aperçu de liens de
+  Facebook. Ce n'est pas un déguisement gratuit : les sites servent
+  **volontairement** leurs métadonnées à ces robots — c'est ainsi que se
+  fabriquent les vignettes partagées. Mesuré sur Booking : 200 avec la fiche
+  complète (JSON-LD Hotel, 281 photos uniques, coordonnées GPS), là où un fetch
+  ordinaire ne reçoit qu'une coquille vide de 4 Ko.
 - **`impit`** — fetch avec **empreinte TLS de Chrome** ([impit](https://github.com/apify/impit),
-  bindings Rust, quelques Mo : serverless-friendly). Passe les murs qui
-  429 le fetch Node, sans navigateur ni contrainte de disque. Le bon défaut
-  pour les sites voyage/e-commerce protégés.
-- **`browser`** (défaut) — rendu JavaScript complet via Camoufox.
-  ⚠️ **Ne peut pas fonctionner sur Netlify Functions** : l'archive Camoufox
-  pèse 663 Mo, le `/tmp` d'une Lambda est plafonné à **512 Mo** et Netlify
-  n'expose aucun réglage pour l'augmenter (AWS le permet jusqu'à 10 Go, mais
-  pas au travers de Netlify). Les Edge Functions sont pires encore (bundle
-  20 Mo, 50 ms de CPU, pas de sous-processus). Ce moteur exige un hôte avec
-  du vrai disque : Docker/VM (Fly.io & co).
+  bindings Rust, quelques Mo : serverless-friendly). Passe les murs qui 429 le
+  fetch Node.
+- **`plain`** — fetch HTTP direct (headers réalistes, redirects suivis,
+  timeout 25 s). Suffit dès que le site embarque sa donnée dans le HTML initial.
+- **`browser`** — rendu JavaScript complet via [Camoufox](https://camoufox.com)
+  (Firefox anti-détection, `humanize: true`).
+  ⚠️ **Indisponible sur Netlify Functions** : l'archive pèse 663 Mo, le `/tmp`
+  d'une Lambda est plafonné à **512 Mo** et Netlify n'expose aucun réglage pour
+  l'augmenter. Les Edge Functions sont pires (bundle 20 Mo, 50 ms de CPU, pas de
+  sous-processus). Ce moteur exige un hôte avec du vrai disque — d'où
+  `server.mts` (voir « Hébergement conteneurisé »). En pratique il n'a servi à
+  rien de plus que `social` sur les cibles testées.
+
+### Ce qui résiste
+
+Certains sites (Expedia) refusent **toute** IP datacenter : `429 / « Robot ou
+pas robot ? »` sur le domaine entier, page d'accueil comprise, quel que soit le
+moteur — navigateur furtif inclus, et pareil avec Patchright (Chromium patché).
+Le mur porte sur l'IP, pas sur le navigateur : aucun hébergeur (gratuit ou non)
+n'y change quoi que ce soit, seule une **IP résidentielle** (proxy rotatif,
+payant) passerait. `impit` accepte un `proxyUrl` si ce besoin se présente.
 
 ## API
 

@@ -54,3 +54,14 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: "Booking — photos uniques, géo, prix, équipements"
         run: node .github/scripts/booking-deep.mjs "${{ inputs.url }}"
+
+  booking-price:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: "Booking — prix avec dates vs sans dates"
+        run: node .github/scripts/booking-price.mjs "${{ inputs.url }}"
