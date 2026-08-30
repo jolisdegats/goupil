@@ -7,6 +7,9 @@
 [build]
   command = "npm run prepare-browser"
   publish = "public"
+  # Skip production builds when a push only touches CI (.github/**) —
+  # the site itself is unchanged. ignore exit 0 = skip.
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude).github'"
 
 [build.environment]
   NODE_VERSION = "22"
@@ -26,7 +29,3 @@
 [context.branch-deploy]
   ignore = "exit 0"
 
-# Production builds: skip when a push only touches CI (.github/**) — the site
-# itself is unchanged, no need to spend a build. ignore exit 0 = skip.
-[build]
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude).github'"
