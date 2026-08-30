@@ -43,3 +43,14 @@ jobs:
       - name: "moteur browser (Camoufox) — référence haute"
         continue-on-error: true
         run: node .github/scripts/richness-compare.mjs browser "${{ inputs.url }}"
+
+  booking-deep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: "Booking — photos uniques, géo, prix, équipements"
+        run: node .github/scripts/booking-deep.mjs "${{ inputs.url }}"
