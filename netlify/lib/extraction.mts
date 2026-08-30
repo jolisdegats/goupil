@@ -13,6 +13,13 @@ export type Rule = {
   regex?: string
   flags?: string
   all?: boolean
+  /**
+   * Borne la recherche : on ne cherche QUE jusqu'à la première occurrence de
+   * ce motif. Indispensable quand une page mélange le contenu de la fiche et
+   * celui d'autres éléments recommandés plus bas — mesuré sur Booking, où 236
+   * des 281 photos trouvées appartiennent à d'AUTRES hébergements.
+   */
+  until?: string
 }
 /** Un champ = une règle ou une CHAÎNE de fallback — la première qui trouve gagne. */
 export type RuleChain = Rule | Rule[]
@@ -154,7 +161,15 @@ export function applyRule(
     } catch {
       return undefined
     }
-    const searchable = html.replace(/\\\//g, '/')
+    let searchable = html.replace(/\\\//g, '/')
+    if (rule.until) {
+      try {
+        const stop = searchable.search(new RegExp(rule.until, 'i'))
+        if (stop > 0) searchable = searchable.slice(0, stop)
+      } catch {
+        // motif de borne invalide : on cherche dans toute la page
+      }
+    }
     if (rule.all) {
       const out = [...searchable.matchAll(re)].map((m) => (m[1] ?? m[0]).replace(/&amp;/g, '&'))
       return [...new Set(out)].slice(0, MAX_IMAGES)
