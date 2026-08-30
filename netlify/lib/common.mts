@@ -11,6 +11,7 @@ import { existsSync } from 'node:fs'
 import { timingSafeEqual, createHash } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
+import { recallEngine, rememberEngine, forgetEngine } from './engine-memory.mts'
 
 const execFileAsync = promisify(execFile)
 
@@ -331,35 +332,56 @@ function looksBlocked(html: string): boolean {
  * centaines de ms), navigateur en dernier recours — et seulement là où il est
  * installable.
  */
+const FETCHERS: Record<Engine, (u: string) => Promise<WorkerResult>> = {
+  auto: autoFetch,
+  social: socialFetch,
+  cloak: cloakFetch,
+  impit: impitFetch,
+  plain: plainFetch,
+  browser: renderPage,
+  managed: managedFetch,
+}
+
 export async function autoFetch(url: string): Promise<WorkerResult> {
-  const chain: Array<[Engine, (u: string) => Promise<WorkerResult>]> = [
+  const chain: Engine[] = [
     // `social` d'abord : le plus léger, et le seul qui obtienne la fiche
     // complète de Booking (les sites servent leurs métadonnées aux robots
     // d'aperçu). `cloak` ensuite : plus lourd, mais seul à passer Akamai.
-    ['social', socialFetch],
-    ['cloak', cloakFetch],
-    ['impit', impitFetch],
-    ['plain', plainFetch],
+    'social',
+    'cloak',
+    'impit',
+    'plain',
   ]
   // Le navigateur ne tourne que là où il est installable (conteneur/VM) : sur
   // une Lambda il échouerait après un long téléchargement inutile. Opt-in.
-  if (process.env.GOUPIL_BROWSER === '1') chain.push(['browser', renderPage])
+  if (process.env.GOUPIL_BROWSER === '1') chain.push('browser')
   // Dernier recours seulement : chaque appel consomme des crédits payants.
-  if (process.env.SCRAPERAPI_KEY) chain.push(['managed', managedFetch])
+  if (process.env.SCRAPERAPI_KEY) chain.push('managed')
+
+  // Le moteur déjà éprouvé sur ce domaine passe en tête : une requête au lieu
+  // de tâtonner. S'il échoue (le site a changé de protection), on l'oublie et
+  // la chaîne complète reprend la main — donc ça se répare tout seul.
+  const known = await recallEngine(url)
+  const order = known ? [known.engine, ...chain.filter((e) => e !== known.engine)] : chain
 
   let lastError = 'no_engine_succeeded'
-  for (const [name, fetcher] of chain) {
-    const result = await fetcher(url)
+  for (const name of order) {
+    const result = await FETCHERS[name](url)
     if ('error' in result) {
       lastError = `${name}: ${result.error}`
-      continue
-    }
-    if (looksBlocked(result.html)) {
+    } else if (looksBlocked(result.html)) {
       lastError = `${name}: blocked_or_empty`
-      continue
+    } else {
+      if (known && known.engine !== name) {
+        console.log(`[goupil] auto → ${name} (le moteur mémorisé ${known.engine} ne marche plus)`)
+      } else {
+        console.log(`[goupil] auto → ${name} a réussi${known ? ' (mémorisé)' : ''}`)
+      }
+      await rememberEngine(url, name)
+      return result
     }
-    console.log(`[goupil] auto → ${name} a réussi`)
-    return result
+    // Le moteur mémorisé vient d'échouer : la note est périmée.
+    if (known && known.engine === name) await forgetEngine(url)
   }
   return { error: lastError, status: 502 }
 }
