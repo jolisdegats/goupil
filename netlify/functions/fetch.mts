@@ -9,7 +9,7 @@
  * API_KEY is unset). Errors: 401 bad key, 400 invalid/unsafe URL, 405 method,
  * 502 the browser fetch itself failed, 503 service not configured.
  */
-import { checkAuth, isSafeUrl, renderPage } from '../lib/common.mts'
+import { checkAuth, isSafeUrl, renderPage, plainFetch } from '../lib/common.mts'
 
 export const config = { path: '/fetch' }
 
@@ -21,8 +21,9 @@ export default async (req: Request): Promise<Response> => {
   if (denied) return denied
 
   let url: unknown
+  let engine: unknown
   try {
-    ;({ url } = await req.json())
+    ;({ url, engine } = await req.json())
   } catch {
     return Response.json({ error: 'invalid_body' }, { status: 400 })
   }
@@ -30,7 +31,10 @@ export default async (req: Request): Promise<Response> => {
     return Response.json({ error: 'invalid_url' }, { status: 400 })
   }
 
-  const rendered = await renderPage(url)
+  if (engine !== undefined && engine !== 'browser' && engine !== 'plain') {
+    return Response.json({ error: 'invalid_engine' }, { status: 400 })
+  }
+  const rendered = engine === 'plain' ? await plainFetch(url) : await renderPage(url)
   if ('error' in rendered) {
     console.error('[goupil] worker failed:', rendered.error)
     return Response.json({ error: 'fetch_failed', detail: rendered.error }, { status: rendered.status })

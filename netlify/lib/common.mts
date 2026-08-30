@@ -139,3 +139,28 @@ export async function renderPage(url: string): Promise<WorkerResult> {
     return { error: err instanceof Error ? err.message : String(err), status: 502 }
   }
 }
+
+/**
+ * Plain HTTPS fetch — no browser at all. Sufficient whenever the target ships
+ * its structured data (JSON-LD / OpenGraph) in the initial HTML, and the only
+ * engine with no infrastructure constraints. Camoufox stays the heavy option
+ * for JS-only pages — on hosts whose disk can actually hold it.
+ */
+export async function plainFetch(url: string): Promise<WorkerResult> {
+  try {
+    const res = await fetch(url, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(25_000),
+      headers: {
+        'user-agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'accept-language': 'fr-FR,fr;q=0.9,en;q=0.8',
+      },
+    })
+    if (!res.ok) return { error: `http_${res.status}`, status: 502 }
+    return { html: await res.text() }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err), status: 502 }
+  }
+}
