@@ -4,19 +4,20 @@
  *
  * Même API que les Netlify Functions (POST /fetch, POST /extract), mais dans
  * un conteneur où le navigateur Camoufox est réellement installable : c'est
- * l'hôte qui débloque le moteur `browser` (Netlify Functions ne le peut pas,
- * /tmp plafonné à 512 Mo contre 663 Mo d'archive).
+ * l'hôte qui débloque le moteur `browser` (une Netlify Function ne le peut
+ * pas, /tmp plafonné à 512 Mo contre 663 Mo d'archive).
  *
- * Écoute sur $PORT (Render le fournit). GET / = healthcheck non authentifié.
+ * Écoute sur $PORT (fourni par Render & co). GET / = healthcheck non
+ * authentifié — la plateforme doit pouvoir le pinger sans clé.
  */
-import { createServer } from 'node:http'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { checkAuthHeaders, isSafeUrl, isEngine, fetchWithEngine } from './netlify/lib/common.mts'
-import { extractFromHtml } from './netlify/lib/extraction.mts'
+import { extractFromHtml, validateExtractionRequest } from './netlify/lib/extraction.mts'
 
 const PORT = Number(process.env.PORT ?? 8080)
 const MAX_BODY = 256 * 1024
 
-function send(res, status, payload) {
+function send(res: ServerResponse, status: number, payload: unknown): void {
   const body = JSON.stringify(payload)
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -25,11 +26,11 @@ function send(res, status, payload) {
   res.end(body)
 }
 
-function readJson(req) {
+function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let size = 0
-    const chunks = []
-    req.on('data', (chunk) => {
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => {
       size += chunk.length
       if (size > MAX_BODY) {
         reject(new Error('body_too_large'))
@@ -40,7 +41,7 @@ function readJson(req) {
     })
     req.on('end', () => {
       try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>)
       } catch {
         reject(new Error('invalid_body'))
       }
@@ -49,10 +50,11 @@ function readJson(req) {
   })
 }
 
-const server = createServer(async (req, res) => {
+const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
   const path = (req.url ?? '/').split('?')[0]
 
-  // Healthcheck (Render ping cette route ; pas d'auth pour ne pas la casser).
+  // Healthcheck (la plateforme ping cette route ; pas d'auth pour ne pas la
+  // casser, et rien de sensible dedans).
   if (req.method === 'GET' && (path === '/' || path === '/health')) {
     return send(res, 200, { service: 'goupil', ok: true, engines: ['browser', 'plain', 'impit'] })
   }
@@ -66,7 +68,7 @@ const server = createServer(async (req, res) => {
   const denied = checkAuthHeaders(req.headers['x-api-key'])
   if (denied) return send(res, denied.status, denied.body)
 
-  let payload
+  let payload: Record<string, unknown>
   try {
     payload = await readJson(req)
   } catch (err) {
@@ -81,6 +83,9 @@ const server = createServer(async (req, res) => {
   if (engine !== undefined && !isEngine(engine)) {
     return send(res, 400, { error: 'invalid_engine' })
   }
+  // Refuser une requête malformée AVANT de payer un fetch réseau.
+  const invalid = validateExtractionRequest({ rules, profile })
+  if (invalid) return send(res, invalid.status, invalid.body)
 
   const rendered = await fetchWithEngine(isEngine(engine) ? engine : 'browser', url)
   if ('error' in rendered) {

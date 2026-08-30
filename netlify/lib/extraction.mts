@@ -144,6 +144,25 @@ export type ExtractionOutcome =
   | { error: true; status: number; body: Record<string, unknown> }
 
 /**
+ * Valide règles et profil SANS toucher au réseau, pour refuser une requête
+ * malformée avant de payer un fetch (sinon un profil inconnu ressortirait en
+ * 502 « fetch_failed » au lieu du 400 qu'il est).
+ */
+export function validateExtractionRequest(opts: {
+  rules?: unknown
+  profile?: unknown
+}): { status: number; body: Record<string, unknown> } | null {
+  const { rules, profile } = opts
+  if (rules !== undefined && (typeof rules !== 'object' || rules === null || Array.isArray(rules))) {
+    return { status: 400, body: { error: 'invalid_rules' } }
+  }
+  if (profile !== undefined && (typeof profile !== 'string' || !(profile in PROFILES))) {
+    return { status: 400, body: { error: 'unknown_profile', available: Object.keys(PROFILES) } }
+  }
+  return null
+}
+
+/**
  * Applique profil + règles + sections auto à du HTML déjà récupéré.
  * Les erreurs renvoyées sont des erreurs de REQUÊTE (400), pas de réseau.
  */

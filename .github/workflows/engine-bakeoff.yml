@@ -1,0 +1,111 @@
+name: engine-bakeoff
+# Existe-t-il un chemin GRATUIT vers Expedia ? Compare, depuis une IP
+# datacenter, Camoufox (attente longue du challenge) et Patchright (Chromium
+# patché, ~180 Mo → tient dans 512 Mo de RAM). Booking sert de témoin.
+# Chaque job est indépendant : un échec n'empêche pas les autres de parler.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expedia:
+        description: "URL Expedia"
+        required: false
+        default: "https://www.expedia.fr/Paris-Hotel-Paris-Marriott-Rive-Gauche-Hotel-Conference-Center.h6620.Hotel-Information"
+      booking:
+        description: "URL Booking (témoin)"
+        required: false
+        default: "https://www.booking.com/hotel/fr/le-bristol-paris.html"
+
+jobs:
+  # Le moins cher d'abord : sans navigateur du tout. Beaucoup de sites servent
+  # volontairement leurs og:* aux crawlers sociaux (c'est ce qui fabrique les
+  # aperçus de liens). Si ça passe, Expedia marche SANS navigateur et SANS
+  # nouvel hébergement — donc directement sur Netlify.
+  no-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: "Expedia — UA crawler social (facebookexternalhit)"
+        continue-on-error: true
+        run: node .github/scripts/engine-bakeoff.mjs social "${{ inputs.expedia }}"
+      - name: "Expedia — UA mobile iPhone"
+        continue-on-error: true
+        run: node .github/scripts/engine-bakeoff.mjs mobile "${{ inputs.expedia }}"
+      - name: "Booking (témoin) — UA crawler social"
+        continue-on-error: true
+        run: node .github/scripts/engine-bakeoff.mjs social "${{ inputs.booking }}"
+
+  rebrowser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: "Installer rebrowser-playwright"
+        run: |
+          npm install --no-save --no-audit --no-fund rebrowser-playwright
+          npx rebrowser-playwright install chromium --with-deps
+      - name: "Expedia — rebrowser-playwright"
+        continue-on-error: true
+        run: node .github/scripts/engine-bakeoff.mjs rebrowser "${{ inputs.expedia }}"
+
+  camoufox-long:
+    runs-on: ubuntu-latest
+    env:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx --yes playwright@1.58.2 install-deps firefox
+      - run: npx --yes camoufox-js fetch
+      - name: "Expedia — Camoufox attente longue"
+        continue-on-error: true
+        run: node .github/scripts/engine-bakeoff.mjs camoufox-long "${{ inputs.expedia }}"
+
+  patchright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: "Installer patchright"
+        run: |
+          npm install --no-save --no-audit --no-fund patchright
+          npx patchright install chromium --with-deps
+
+      # LA question annexe : est-ce que ça tiendrait dans le /tmp d'une Lambda
+      # Netlify (512 Mo) ? Si oui, aucun nouvel hébergement n'est nécessaire.
+      - name: "Mesurer l'empreinte disque réelle"
+        run: |
+          echo "── navigateurs installés ──"
+          CACHE="${HOME}/.cache/ms-playwright"
+          [ -d "$CACHE" ] || CACHE=$(find / -maxdepth 6 -type d -name "ms-playwright" 2>/dev/null | head -1)
+          echo "cache: $CACHE"
+          du -sh "$CACHE" 2>/dev/null || echo "(cache introuvable)"
+          du -sh "$CACHE"/* 2>/dev/null | sort -h
+          echo "── node_modules/patchright ──"
+          du -sh node_modules/patchright node_modules/patchright-core 2>/dev/null
+          echo "── TOTAL à embarquer (navigateur + lib) ──"
+          TOTAL_KB=$(( $(du -sk "$CACHE" 2>/dev/null | cut -f1) + $(du -sk node_modules/patchright node_modules/patchright-core 2>/dev/null | awk '{s+=$1} END {print s+0}') ))
+          echo "total: $((TOTAL_KB / 1024)) Mo"
+          if [ "$TOTAL_KB" -lt 460000 ]; then
+            echo "✅ TIENT dans le /tmp d'une Lambda Netlify (512 Mo) → aucun nouvel hébergement nécessaire"
+          else
+            echo "❌ NE TIENT PAS dans 512 Mo → hébergement conteneurisé requis"
+          fi
+      - name: "Expedia — Patchright"
+        continue-on-error: true
+        run: node .github/scripts/engine-bakeoff.mjs patchright "${{ inputs.expedia }}"
+      - name: "Booking (témoin) — Patchright"
+        continue-on-error: true
+        run: node .github/scripts/engine-bakeoff.mjs patchright "${{ inputs.booking }}"

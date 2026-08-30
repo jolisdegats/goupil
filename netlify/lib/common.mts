@@ -91,14 +91,24 @@ export function keyMatches(given: string, expected: string): boolean {
   return timingSafeEqual(a, b)
 }
 
+/**
+ * Transport-agnostic auth: takes the raw header value, returns the refusal to
+ * send (or null to proceed). Shared by the Netlify functions and server.mjs.
+ */
+export function checkAuthHeaders(
+  given: string | string[] | undefined
+): { status: number; body: Record<string, unknown> } | null {
+  const apiKey = process.env.API_KEY
+  if (!apiKey) return { status: 503, body: { error: 'service_not_configured' } }
+  const value = Array.isArray(given) ? (given[0] ?? '') : (given ?? '')
+  if (!keyMatches(value, apiKey)) return { status: 401, body: { error: 'unauthorized' } }
+  return null
+}
+
 /** 401/503 when auth fails or isn't configured; null when the request may proceed. */
 export function checkAuth(req: Request): Response | null {
-  const apiKey = process.env.API_KEY
-  if (!apiKey) return Response.json({ error: 'service_not_configured' }, { status: 503 })
-  if (!keyMatches(req.headers.get('x-api-key') ?? '', apiKey)) {
-    return Response.json({ error: 'unauthorized' }, { status: 401 })
-  }
-  return null
+  const denied = checkAuthHeaders(req.headers.get('x-api-key') ?? undefined)
+  return denied ? Response.json(denied.body, { status: denied.status }) : null
 }
 
 // ── Camoufox worker ─────────────────────────────────────────────────────────

@@ -1,162 +1,27 @@
 /**
- * POST /extract  { url, rules? }  →  { auto, data? }
+ * POST /extract  { url, rules?, profile?, auto?, engine? }  →  { auto, data? }
  *
- * Deterministic structured extraction — no LLM, no per-call cost. Renders the
- * page in Camoufox, then extracts:
+ * Façade Netlify de l'extraction déterministe (sans LLM, zéro coût par appel).
+ * Toute la logique d'extraction vit dans lib/extraction.mts, partagée avec le
+ * serveur conteneurisé (server.mjs) — une seule implémentation, deux hôtes.
  *
- *   auto (always returned, zero configuration):
- *     meta    — every <meta property|name=… content=…> as a flat map
- *     jsonld  — every parsed <script type="application/ld+json"> node
- *               (schema.org: Hotel, Product, VacationRental, …; @graph flattened)
- *     images  — deduped absolute image URLs found anywhere in the page
- *               (attributes AND JSON-escaped blobs), capped at 50
- *
- *   data (only when `rules` is provided) — per-field declarative rules that
- *   say WHERE to look:
- *     { "name":   { "meta": "og:title" },
- *       "hotel":  { "jsonld": "Hotel.name" },        // "Type.path.to.field", "*" = any type
- *       "photos": { "regex": "https://…\\.jpg[^\"]*", "all": true } }
- *
- * The service stays app-agnostic: it knows mechanisms (meta / jsonld / regex),
- * never platforms.
+ * ⚠️ Sur Netlify, seuls les moteurs `plain` et `impit` aboutissent : le
+ * navigateur Camoufox (663 Mo) ne tient pas dans le /tmp d'une Lambda
+ * (512 Mo). Le moteur `browser` exige l'hôte conteneurisé.
  */
 import { checkAuth, isSafeUrl, isEngine, fetchWithEngine } from '../lib/common.mts'
-import { PROFILES } from '../lib/profiles.mts'
+import { extractFromHtml, validateExtractionRequest } from '../lib/extraction.mts'
 
 export const config = { path: '/extract' }
 
-type Rule = { meta?: string; jsonld?: string; regex?: string; flags?: string; all?: boolean }
-/** A field maps to one rule or a fallback CHAIN — first rule that finds something wins. */
-type RuleChain = Rule | Rule[]
-
-const AUTO_SECTIONS = ['meta', 'jsonld', 'images'] as const
-type AutoSection = (typeof AUTO_SECTIONS)[number]
-
-const MAX_RULES = 50
-const MAX_IMAGES = 50
-
-// ── auto extractors ─────────────────────────────────────────────────────────
-
-export function extractMetas(html: string): Record<string, string> {
-  const metas: Record<string, string> = {}
-  const re =
-    /<meta\s[^>]*?(?:property|name)=["']([^"']+)["'][^>]*?content=["']([^"']*)["']|<meta\s[^>]*?content=["']([^"']*)["'][^>]*?(?:property|name)=["']([^"']+)["']/gi
-  for (const m of html.matchAll(re)) {
-    const key = (m[1] ?? m[4])?.toLowerCase()
-    const value = (m[2] ?? m[3])?.replace(/&amp;/g, '&')
-    if (key && value && !(key in metas)) metas[key] = value
-  }
-  return metas
-}
-
-export function extractJsonLd(html: string): unknown[] {
-  const nodes: unknown[] = []
-  const re = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
-  for (const m of html.matchAll(re)) {
-    try {
-      const parsed = JSON.parse(m[1]) as unknown
-      const list = Array.isArray(parsed) ? parsed : [parsed]
-      for (const node of list) {
-        if (node && typeof node === 'object' && '@graph' in node) {
-          const graph = (node as { '@graph': unknown })['@graph']
-          if (Array.isArray(graph)) nodes.push(...graph)
-          else nodes.push(node)
-        } else if (node) {
-          nodes.push(node)
-        }
-      }
-    } catch {
-      // malformed block — skip
-    }
-  }
-  return nodes
-}
-
-export function extractImages(html: string): string[] {
-  // JSON blobs escape slashes (https:\/\/…) — unescape a copy so those match too.
-  const searchable = html.replace(/\\\//g, '/')
-  const re = /https?:\/\/[^\s"'<>\\)]+\.(?:jpe?g|png|webp|avif)(?:\?[^\s"'<>\\)]*)?/gi
-  const seen = new Set<string>()
-  for (const m of searchable.matchAll(re)) {
-    const url = m[0].replace(/&amp;/g, '&')
-    if (!seen.has(url)) seen.add(url)
-    if (seen.size >= MAX_IMAGES) break
-  }
-  return [...seen]
-}
-
-// ── rule engine ─────────────────────────────────────────────────────────────
-
-function typeMatches(node: unknown, wanted: string): boolean {
-  if (wanted === '*') return true
-  if (!node || typeof node !== 'object') return false
-  const t = (node as Record<string, unknown>)['@type']
-  const types = Array.isArray(t) ? t : [t]
-  return types.some((x) => typeof x === 'string' && x.toLowerCase() === wanted.toLowerCase())
-}
-
-function walkPath(node: unknown, segments: string[]): unknown {
-  let current: unknown = node
-  for (const segment of segments) {
-    if (Array.isArray(current)) current = current[0]
-    if (!current || typeof current !== 'object') return undefined
-    current = (current as Record<string, unknown>)[segment]
-  }
-  return current
-}
-
-export function applyRule(
-  rule: Rule,
-  html: string,
-  auto: { meta: Record<string, string>; jsonld: unknown[] }
-): unknown {
-  if (rule.meta) return auto.meta[rule.meta.toLowerCase()]
-
-  if (rule.jsonld) {
-    const [type, ...path] = rule.jsonld.split('.')
-    for (const node of auto.jsonld) {
-      if (!typeMatches(node, type)) continue
-      const value = path.length === 0 ? node : walkPath(node, path)
-      if (value !== undefined) return value
-    }
-    return undefined
-  }
-
-  if (rule.regex) {
-    let re: RegExp
-    try {
-      const flags = (rule.flags ?? 'i').replace(/[^gimsu]/g, '')
-      re = new RegExp(rule.regex, flags.includes('g') || !rule.all ? flags : flags + 'g')
-    } catch {
-      return undefined
-    }
-    const searchable = html.replace(/\\\//g, '/')
-    if (rule.all) {
-      const out = [...searchable.matchAll(re)].map((m) => (m[1] ?? m[0]).replace(/&amp;/g, '&'))
-      return [...new Set(out)].slice(0, MAX_IMAGES)
-    }
-    const m = searchable.match(re)
-    return m ? (m[1] ?? m[0]).replace(/&amp;/g, '&') : undefined
-  }
-
-  return undefined
-}
-
-export function resolveField(
-  chain: RuleChain,
-  html: string,
-  auto: { meta: Record<string, string>; jsonld: unknown[] }
-): unknown {
-  const rules = Array.isArray(chain) ? chain : [chain]
-  for (const rule of rules) {
-    if (!rule || typeof rule !== 'object') continue
-    const value = applyRule(rule, html, auto)
-    if (value !== undefined && value !== '') return value
-  }
-  return undefined
-}
-
-// ── handler ─────────────────────────────────────────────────────────────────
+// Ré-export pour les scripts de test qui importent depuis ce module.
+export {
+  extractMetas,
+  extractJsonLd,
+  extractImages,
+  applyRule,
+  resolveField,
+} from '../lib/extraction.mts'
 
 export default async (req: Request): Promise<Response> => {
   if (req.method !== 'POST') {
@@ -178,64 +43,22 @@ export default async (req: Request): Promise<Response> => {
   if (typeof url !== 'string' || url.length > 2048 || !(await isSafeUrl(url))) {
     return Response.json({ error: 'invalid_url' }, { status: 400 })
   }
-  if (rules !== undefined && (typeof rules !== 'object' || rules === null || Array.isArray(rules))) {
-    return Response.json({ error: 'invalid_rules' }, { status: 400 })
-  }
-
-  // Registered profile (declared once in profiles/, addressed by name) —
-  // inline rules, when also given, override the profile field-by-field.
-  let profileRules: Record<string, unknown> = {}
-  if (profile !== undefined) {
-    if (typeof profile !== 'string' || !(profile in PROFILES)) {
-      return Response.json(
-        { error: 'unknown_profile', available: Object.keys(PROFILES) },
-        { status: 400 }
-      )
-    }
-    profileRules = PROFILES[profile]
-  }
-
-  const merged: Record<string, unknown> = { ...profileRules, ...(rules as Record<string, unknown> | undefined) }
-  const ruleEntries = Object.entries(merged).filter(([field]) => !field.startsWith('$'))
-  if (ruleEntries.length > MAX_RULES) {
-    return Response.json({ error: 'too_many_rules' }, { status: 400 })
-  }
-
-  // Response slimming: auto = true (default) | false | subset like ["images"].
-  let autoSections: AutoSection[] = [...AUTO_SECTIONS]
-  if (autoParam === false) autoSections = []
-  else if (Array.isArray(autoParam)) {
-    autoSections = AUTO_SECTIONS.filter((s) => autoParam.includes(s))
-  }
-
   if (engine !== undefined && !isEngine(engine)) {
     return Response.json({ error: 'invalid_engine' }, { status: 400 })
   }
+  // Refuser une requête malformée AVANT de payer un fetch réseau.
+  const invalid = validateExtractionRequest({ rules, profile })
+  if (invalid) return Response.json(invalid.body, { status: invalid.status })
+
   const rendered = await fetchWithEngine(isEngine(engine) ? engine : 'browser', url)
   if ('error' in rendered) {
-    return Response.json({ error: 'fetch_failed', detail: rendered.error }, { status: rendered.status })
+    return Response.json(
+      { error: 'fetch_failed', detail: rendered.error },
+      { status: rendered.status }
+    )
   }
 
-  const meta = extractMetas(rendered.html)
-  const jsonld = extractJsonLd(rendered.html)
-  const engineAuto = { meta, jsonld }
-
-  const body: Record<string, unknown> = {}
-  if (autoSections.length > 0) {
-    const auto: Record<string, unknown> = {}
-    if (autoSections.includes('meta')) auto.meta = meta
-    if (autoSections.includes('jsonld')) auto.jsonld = jsonld
-    if (autoSections.includes('images')) auto.images = extractImages(rendered.html)
-    body.auto = auto
-  }
-
-  if (ruleEntries.length > 0) {
-    const data: Record<string, unknown> = {}
-    for (const [field, chain] of ruleEntries) {
-      data[field] = resolveField(chain as RuleChain, rendered.html, engineAuto)
-    }
-    body.data = data
-  }
-
-  return Response.json(body)
+  const result = extractFromHtml(rendered.html, { rules, profile, auto: autoParam })
+  if ('error' in result) return Response.json(result.body, { status: result.status })
+  return Response.json(result.body)
 }
