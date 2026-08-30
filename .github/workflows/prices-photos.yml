@@ -1,0 +1,40 @@
+name: prices-photos
+# Deux questions posées par Julie, jamais vraiment mesurées :
+#  1. le prix est-il extractible (Expedia avec dates) ?
+#  2. les photos ramassées sur Booking appartiennent-elles bien à CETTE fiche,
+#     ou à des hébergements recommandés sur la même page ?
+
+on:
+  workflow_dispatch:
+    inputs:
+      expedia:
+        description: "Fiche Expedia AVEC dates"
+        required: false
+        default: "https://www.expedia.fr/Brussels-Hotel-Juliana-Hotel-Brussels.h67403455.Description-Hotel?startDate=2026-09-04&endDate=2026-09-06&guestRating=40&adults=2&rooms=1&rm1=a2"
+      booking:
+        description: "Fiche Booking"
+        required: false
+        default: "https://www.booking.com/hotel/fr/le-bristol-paris.html"
+
+jobs:
+  prix-expedia:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: "Expedia — où est le prix ?"
+        run: node .github/scripts/expedia-price.mjs "${{ inputs.expedia }}"
+
+  photos-booking:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: "Booking — à qui appartiennent les photos ?"
+        run: node .github/scripts/booking-photo-owner.mjs "${{ inputs.booking }}"
