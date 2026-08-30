@@ -37,7 +37,9 @@ try {
   const t0 = Date.now()
   const r = await session.get(url)
   const ms = Date.now() - t0
-  const html = r.body ?? r.text ?? ''
+  // Le corps peut arriver en Buffer, en string, ou derrière une méthode.
+  const raw = typeof r.text === 'function' ? await r.text() : (r.body ?? r.text ?? r.content ?? '')
+  const html = typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8')
   console.log(`HTTP ${r.statusCode} (${r.protocol ?? '?'}) — ${html.length} octets en ${ms} ms`)
   const title = html.match(/<title[^>]*>([\s\S]{0,200}?)<\/title>/i)?.[1]?.trim()
   console.log(`title  : ${title ?? '(absent)'}`)
@@ -45,8 +47,23 @@ try {
   const lodging = LODGING.test(html)
   console.log(`mur anti-bot        : ${walled}`)
   console.log(`JSON-LD hébergement : ${lodging}`)
+  // Preuves de contenu réel, indépendantes du JSON-LD (une page de recherche
+  // ou d'accueil n'a pas de fiche mais doit montrer du vrai contenu Expedia).
+  const ogTitle = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i)?.[1]
+  console.log(`og:title            : ${ogTitle ?? '(absent)'}`)
+  console.log(`liens de fiches     : ${(html.match(/Hotel-Information/g) ?? []).length}`)
+  console.log(`images trvl-media   : ${(html.match(/trvl-media\.com/g) ?? []).length}`)
+  console.log(`extrait             : ${html.slice(0, 200).replace(/\s+/g, ' ')}`)
 
   console.log('\n════════ VERDICT ════════')
+  // Une page de recherche/accueil n'a pas de JSON-LD d'hébergement : le
+  // critère est « vrai contenu Expedia servi, pas un mur ».
+  const realContent = !walled && html.length > 200_000
+  if (realContent && !lodging) {
+    console.log('PASS (page non-fiche) — Expedia a servi une VRAIE page, pas le mur 🎉')
+    console.log(`       → l'empreinte transport suffit : ${html.length} octets de contenu réel.`)
+    process.exit(0)
+  }
   if (lodging && !walled) {
     console.log('PASS — httpcloak obtient la VRAIE fiche depuis une IP datacenter 🎉')
     console.log('       → l\'empreinte transport suffisait : moteur à intégrer dans goupil.')

@@ -31,9 +31,12 @@ jobs:
       - name: "Expedia — chrome-latest-windows (profil le plus courant)"
         continue-on-error: true
         run: node .github/scripts/httpcloak-test.mjs "${{ inputs.expedia }}" chrome-latest-windows
-      - name: "Expedia — fiche hôtel (si l'accueil passe)"
+      - name: "Expedia — page de recherche"
         continue-on-error: true
         run: node .github/scripts/httpcloak-test.mjs "https://www.expedia.fr/Hotel-Search?destination=Paris" chrome-latest-windows
+      - name: "Expedia — VRAIE fiche découverte depuis la recherche"
+        continue-on-error: true
+        run: node .github/scripts/httpcloak-discover.mjs
       - name: "Booking (témoin) — chrome-latest"
         continue-on-error: true
         run: node .github/scripts/httpcloak-test.mjs "${{ inputs.booking }}" chrome-latest
