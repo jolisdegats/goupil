@@ -93,7 +93,14 @@ if (at === -1) {
 }
 
 console.log('\n════════ LECTURE ════════')
-const usable = amounts.length > 0 || jsonPrices.length > 0
+// Un seul montant ne prouve rien (« 100 % », un identifiant…). Une page de
+// résultats affiche un tarif PAR établissement : on exige donc plusieurs
+// montants distincts, ou des prix nommés dans le JSON.
+const distinct = [...new Set(amounts)]
+const usable = jsonPrices.length > 0 || distinct.length >= 3
+if (!usable && distinct.length > 0) {
+  console.log(`(${distinct.length} montant(s) isolé(s) — trop peu pour être des tarifs : ${distinct.join(', ')})`)
+}
 console.log(usable
   ? "PASS — des tarifs sont présents dans le HTML de recherche : hamak pourrait\n       interroger la recherche sur les dates du séjour et lire le prix."
   : 'FAIL — aucun tarif : les prix arrivent par XHR, y compris en recherche.')
