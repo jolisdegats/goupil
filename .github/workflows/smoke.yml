@@ -1,0 +1,59 @@
+name: smoke
+# Smoke-test du service déployé (goupil-fetcher.netlify.app).
+# Déclenchement manuel uniquement — ne consomme rien en temps normal.
+# Le test 2 (authentifié) ne tourne que si le secret Actions API_KEY existe
+# (Settings → Secrets and variables → Actions → New repository secret).
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "URL à extraire (test authentifié)"
+        required: false
+        default: "https://www.expedia.fr/Paris-Hotel-Paris-Marriott-Rive-Gauche-Hotel-Conference-Center.h6620.Hotel-Information"
+
+env:
+  BASE: https://goupil-fetcher.netlify.app
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Test 0 — la page d'accueil répond"
+        run: |
+          code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 30 "$BASE/")
+          echo "GET / -> HTTP $code"
+          [ "$code" = "200" ] || { echo "::error::accueil KO ($code)"; exit 1; }
+
+      - name: "Test 1 — auth fail-closed (sans clé => 401)"
+        run: |
+          code=$(curl -sS -o /tmp/r1.json -w "%{http_code}" --max-time 60 -X POST "$BASE/extract" \
+            -H 'content-type: application/json' -d '{"url":"https://example.com"}')
+          echo "POST /extract sans clé -> HTTP $code"
+          cat /tmp/r1.json; echo
+          [ "$code" = "401" ] || { echo "::error::attendu 401 (503 = API_KEY absente côté Netlify), reçu $code"; exit 1; }
+
+      - name: "Test 2 — extraction authentifiée (sauté si secret absent)"
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          TARGET_URL: ${{ inputs.url }}
+        run: |
+          if [ -z "$API_KEY" ]; then
+            echo "::notice::secret Actions API_KEY absent — test 2 sauté."
+            exit 0
+          fi
+          run_extract() {
+            curl -sS -o /tmp/r2.json -w "%{http_code}" --max-time 120 -X POST "$BASE/extract" \
+              -H "x-api-key: $API_KEY" -H 'content-type: application/json' \
+              -d "{\"url\":\"$TARGET_URL\",\"profile\":\"lodging\",\"auto\":[\"images\"]}"
+          }
+          code=$(run_extract)
+          echo "1er essai -> HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "cold start probable — 2e essai dans 5s…"; sleep 5
+            code=$(run_extract)
+            echo "2e essai -> HTTP $code"
+          fi
+          echo "── réponse (tronquée) ──"
+          head -c 3000 /tmp/r2.json; echo
+          [ "$code" = "200" ] || { echo "::error::extraction KO ($code)"; exit 1; }
