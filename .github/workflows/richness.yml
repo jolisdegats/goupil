@@ -1,0 +1,45 @@
+name: richness
+# « Ça marche » ≠ « on récupère tout ». Compare, sur une même fiche, ce que
+# chaque moteur rend vraiment sur les champs dont hamak a besoin : toutes les
+# photos, le prix, la capacité, les équipements, la géo. Manuel uniquement.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Fiche à comparer"
+        required: false
+        default: "https://www.booking.com/hotel/fr/le-bristol-paris.html"
+
+jobs:
+  sans-navigateur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - name: "moteur social (UA crawler)"
+        continue-on-error: true
+        run: node .github/scripts/richness-compare.mjs social "${{ inputs.url }}"
+      - name: "moteur impit (UA Chrome)"
+        continue-on-error: true
+        run: node .github/scripts/richness-compare.mjs impit "${{ inputs.url }}"
+
+  navigateur:
+    runs-on: ubuntu-latest
+    env:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx --yes playwright@1.58.2 install-deps firefox
+      - run: npx --yes camoufox-js fetch
+      - name: "moteur browser (Camoufox) — référence haute"
+        continue-on-error: true
+        run: node .github/scripts/richness-compare.mjs browser "${{ inputs.url }}"
