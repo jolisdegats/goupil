@@ -1,22 +1,43 @@
 name: smoke
-# Smoke-test du service déployé (goupil-fetcher.netlify.app).
-# Déclenchement manuel uniquement — ne consomme rien en temps normal.
-# Le test 2 (authentifié) ne tourne que si le secret Actions API_KEY existe
-# (Settings → Secrets and variables → Actions → New repository secret).
+# Smoke-test du service déployé (goupil-fetcher.netlify.app) + test hors-service
+# du moteur plain. Déclenchement manuel uniquement — ne consomme rien en temps
+# normal. Le test 2 (authentifié) ne tourne que si le secret Actions API_KEY
+# existe (Settings → Secrets and variables → Actions → New repository secret).
 
 on:
   workflow_dispatch:
     inputs:
       url:
-        description: "URL à extraire (test authentifié)"
+        description: "URL à extraire"
         required: false
         default: "https://www.expedia.fr/Paris-Hotel-Paris-Marriott-Rive-Gauche-Hotel-Conference-Center.h6620.Hotel-Information"
+      engine:
+        description: "Moteur pour le test authentifié (plain|browser — browser ne peut pas marcher sur Netlify, /tmp trop petit)"
+        required: false
+        default: "plain"
 
 env:
   BASE: https://goupil-fetcher.netlify.app
 
 jobs:
+  # Le vrai code du service (plainFetch + extracteurs + profil lodging) exécuté
+  # sur le runner contre l'URL cible — aucune clé requise, ne dépend pas du
+  # déploiement. Vert = le site livre sa donnée sans JavaScript.
+  plain-offline:
+    name: "Moteur plain (code exécuté sur le runner, sans clé)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: "Fetch plain + extraction profil lodging"
+        env:
+          TARGET_URL: ${{ inputs.url }}
+        run: npx --yes tsx@4.19.2 .github/scripts/test-plain.mts "$TARGET_URL"
+
   smoke:
+    name: "Service déployé"
     runs-on: ubuntu-latest
     steps:
       - name: "Test 0 — la page d'accueil répond"
@@ -37,6 +58,7 @@ jobs:
         env:
           API_KEY: ${{ secrets.API_KEY }}
           TARGET_URL: ${{ inputs.url }}
+          ENGINE: ${{ inputs.engine }}
         run: |
           if [ -z "$API_KEY" ]; then
             echo "::notice::secret Actions API_KEY absent — test 2 sauté."
@@ -45,7 +67,7 @@ jobs:
           run_extract() {
             curl -sS -o /tmp/r2.json -w "%{http_code}" --max-time 120 -X POST "$BASE/extract" \
               -H "x-api-key: $API_KEY" -H 'content-type: application/json' \
-              -d "{\"url\":\"$TARGET_URL\",\"profile\":\"lodging\",\"auto\":[\"images\"]}"
+              -d "{\"url\":\"$TARGET_URL\",\"profile\":\"lodging\",\"auto\":[\"images\"],\"engine\":\"$ENGINE\"}"
           }
           code=$(run_extract)
           echo "1er essai -> HTTP $code"
