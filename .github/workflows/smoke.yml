@@ -81,3 +81,17 @@ jobs:
           echo "── réponse (tronquée) ──"
           head -c 3000 /tmp/r2.json; echo
           [ "$code" = "200" ] || { echo "::error::extraction KO ($code)"; exit 1; }
+
+      - name: "Test 3 — Expedia via le moteur cloak (binaire natif en Lambda)"
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+        run: |
+          if [ -z "$API_KEY" ]; then echo "::notice::secret absent — sauté."; exit 0; fi
+          EXPEDIA="https://www.expedia.fr/Brussels-Hotel-Juliana-Hotel-Brussels.h67403455.Description-Hotel"
+          code=$(curl -sS -o /tmp/r3.json -w "%{http_code}" --max-time 120 -X POST "$BASE/extract" \
+            -H "x-api-key: $API_KEY" -H 'content-type: application/json' \
+            -d "{\"url\":\"$EXPEDIA\",\"profile\":\"lodging\",\"auto\":false,\"engine\":\"cloak\"}")
+          echo "POST /extract engine=cloak -> HTTP $code"
+          head -c 1500 /tmp/r3.json; echo
+          [ "$code" = "200" ] || { echo "::error::cloak KO sur le service déployé ($code) — le binaire natif ne se charge probablement pas en Lambda"; exit 1; }
+          grep -q '"name"' /tmp/r3.json || { echo "::error::200 mais aucun champ résolu"; exit 1; }
