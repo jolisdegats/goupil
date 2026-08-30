@@ -11,10 +11,16 @@
 const base = process.argv[2]
 if (!base) { console.error('usage: airbnb-price.mjs <url>'); process.exit(2) }
 
+// Si l'URL porte déjà des dates, on les garde : des dates INDISPONIBLES
+// donnent un prix vide, ce qui se confond avec « pas de prix extractible ».
+const hasDates = /[?&]check_in=/.test(base)
 const start = new Date(Date.now() + 35 * 86400_000)
 const end = new Date(Date.now() + 37 * 86400_000)
 const iso = (d) => d.toISOString().slice(0, 10)
-const withDates = `${base}${base.includes('?') ? '&' : '?'}check_in=${iso(start)}&check_out=${iso(end)}&adults=2`
+const bare = base.split('?')[0]
+const withDates = hasDates
+  ? base
+  : `${base}${base.includes('?') ? '&' : '?'}check_in=${iso(start)}&check_out=${iso(end)}&adults=2`
 
 const { Impit } = await import('impit')
 async function get(url) {
@@ -23,7 +29,7 @@ async function get(url) {
   return { status: res.status, html: await res.text() }
 }
 
-for (const [label, url] of [['SANS dates', base], ['AVEC dates', withDates]]) {
+for (const [label, url] of [['SANS dates', bare], ['AVEC dates', withDates]]) {
   console.log(`\n═══ ${label} ═══`)
   console.log(url.slice(0, 130))
   const { status, html } = await get(url)

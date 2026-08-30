@@ -14,6 +14,10 @@ on:
         description: "Nom d'hôtel à retrouver dans les résultats"
         required: false
         default: "Juliana"
+      airbnb:
+        description: "Annonce Airbnb (avec des dates RÉELLEMENT disponibles)"
+        required: false
+        default: "https://www.airbnb.fr/rooms/602824612447596322?check_in=2027-02-11&check_out=2027-02-14&adults=2&guests=1"
 
 jobs:
   recherche:
@@ -40,7 +44,7 @@ jobs:
           node-version: 22
       - run: npm ci --no-audit --no-fund
       - name: "Airbnb — le prix est-il déjà dans l'état différé ?"
-        run: node .github/scripts/airbnb-price.mjs "https://www.airbnb.com/rooms/602824612447596322"
+        run: node .github/scripts/airbnb-price.mjs "${{ inputs.airbnb }}"
 
   prix-par-hotel:
     runs-on: ubuntu-latest
