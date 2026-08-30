@@ -1,0 +1,24 @@
+name: expedia-url-check
+# L'URL Expedia de nos tests est-elle valide ? Compare plusieurs fiches et une
+# page de recherche : si TOUT redirige vers /Hotels, c'est bien l'IP ; si une
+# fiche s'affiche, c'est notre URL qui était en cause. Manuel uniquement.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp/.cache
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npx --yes playwright@1.58.2 install-deps firefox
+      - run: npx --yes camoufox-js fetch
+      - name: "Comparer plusieurs URLs Expedia"
+        run: node .github/scripts/expedia-url-check.mjs
