@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Stealth browser fetch as a service — POST a URL, get the rendered HTML back (Camoufox on Netlify Functions). App-agnostic.",
+  "description": "Page fetch as a service — POST a URL, get the HTML or deterministic structured extraction back (7 engines, learned per domain, on Netlify Functions). App-agnostic.",
   "scripts": {
     "prepare-browser": "npx camoufox-js fetch || true"
   },
