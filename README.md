@@ -112,7 +112,7 @@ l'essaie en premier la fois suivante — une requête au lieu de tâtonner.
 | Variable | Quoi | Rôle |
 |---|---|---|
 | `API_KEY` | clé **de goupil**, que tu génères | **requise** — le « mot de passe » du service : les apps appelantes l'envoient en `x-api-key`. Sans elle le service répond 503 (fail-closed). |
-| `SCRAPERAPI_KEY` | clé d'un **service tiers payant** ([ScraperAPI](https://www.scraperapi.com)) | optionnelle — active le moteur `managed` et son maillon en fin de chaîne `auto`. |
+| `SCRAPERAPI_KEY` | clé d'un **service tiers payant** ([ScraperAPI](https://www.scraperapi.com)) | optionnelle — active le moteur `managed` et son maillon en fin de chaîne `auto`. **Non posée sur goupil-fetcher.netlify.app** : `managed` y est inerte, aucun crédit consommé. |
 | `GOUPIL_BROWSER=1` | simple **interrupteur** | optionnelle — autorise le moteur `browser` dans la chaîne `auto`. À ne poser **que** sur un hôte conteneurisé : sur une Lambda le navigateur échoue après un long téléchargement inutile. |
 
 La mémoire des moteurs (Netlify Blobs) ne demande aucune variable.
@@ -274,7 +274,8 @@ le README ; pas de deploy previews ni de branch deploys.
 - **Moteur `browser` indisponible sur Netlify** (voir « Moteurs ») :
   Camoufox (663 Mo) ne tient pas dans le `/tmp` Lambda (512 Mo). Sur
   goupil-fetcher.netlify.app, `social`, `cloak`, `impit` et `plain`
-  aboutissent (`managed` aussi si la clé est posée) ; `browser` échoue en
+  aboutissent (`managed` est inerte : `SCRAPERAPI_KEY` n'y est pas posée) ;
+  `browser` échoue en
   `fetch_failed`. Si un jour il le faut : ce même repo en Docker
   (`server.mts`) avec Camoufox baké dans l'image.
 - **Pas de prix** extrait pour l'instant (voir « Ce qui marche aujourd'hui »).
