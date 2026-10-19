@@ -4,7 +4,8 @@ name: scrapling
 # XHR) contre nos moteurs social/cloak/impit, sur les mêmes cibles, depuis le
 # même runner, à la même minute. Scrapling tourne dans son image Docker
 # officielle ; tous les HTML passent ensuite par le VRAI code d'extraction de
-# goupil (profil lodging). Tableau final dans le résumé du run.
+# goupil (profil lodging). Témoin : patchright nu en Node, même écoute XHR.
+# Tableau final dans le résumé du run.
 #
 # Le déclencheur `push` (limité à cette branche et à ces fichiers) existe parce
 # qu'un workflow_dispatch n'est déclenchable que depuis la branche par défaut.
@@ -70,6 +71,15 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/w" -w /w --entrypoint /app/.venv/bin/python "$IMAGE" \
             -I .github/scripts/scrapling-bakeoff.py out "$T_BOOKING" "$T_EXPEDIA" "$T_AIRBNB" "$T_ABRITEL"
+
+      # Le témoin : si patchright nu en Node obtient les mêmes prix XHR, c'est
+      # le navigateur qui compte — pas Scrapling ni ses couches furtives.
+      - name: "Témoin — patchright nu (Node), même écoute XHR"
+        if: always()
+        run: |
+          npm install --no-save --no-audit --no-fund patchright
+          npx patchright install chromium --with-deps
+          npx --yes tsx@4.19.2 .github/scripts/scrapling-compare.mts patchright out "$T_BOOKING" "$T_EXPEDIA" "$T_AIRBNB" "$T_ABRITEL"
 
       - name: "Verdict — tout passe par l'extraction de goupil"
         if: always()

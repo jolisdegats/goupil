@@ -5,11 +5,16 @@
  *   fetch   — les moteurs de goupil (social, cloak, impit), avec leur vrai
  *             code, sur les mêmes cibles, depuis le même runner, juste avant
  *             Scrapling : même IP, même minute.
+ *   patchright — le témoin : patchright NU en Node (le Chromium que Scrapling
+ *             0.5 pilote, sans ses empreintes browserforge ni ses réglages),
+ *             avec la même écoute des XHR. Si lui aussi obtient les prix,
+ *             c'est le navigateur qui compte, pas Scrapling.
  *   verdict — TOUS les HTML (goupil et Scrapling) passés dans le vrai code
  *             d'extraction de goupil (profil lodging). La question n'est pas
  *             « la page a-t-elle répondu » mais « qu'en tirerait /extract ».
  *
  *   npx tsx .github/scripts/scrapling-compare.mts fetch <out> <cible>=<url> [...]
+ *   npx tsx .github/scripts/scrapling-compare.mts patchright <out> <cible>=<url> [...]
  *   npx tsx .github/scripts/scrapling-compare.mts verdict <out>
  */
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
@@ -18,10 +23,16 @@ import { fetchWithEngine, type Engine } from '../../netlify/lib/common.mts'
 import { extractFromHtml } from '../../netlify/lib/extraction.mts'
 
 const [, , command, out, ...targets] = process.argv
-if (!out || (command !== 'fetch' && command !== 'verdict')) {
-  console.error('usage: scrapling-compare.mts fetch <out> <cible>=<url> [...] | verdict <out>')
+if (!out || !['fetch', 'patchright', 'verdict'].includes(command)) {
+  console.error('usage: scrapling-compare.mts fetch|patchright <out> <cible>=<url> [...] | verdict <out>')
   process.exit(2)
 }
+
+const splitTarget = (arg: string) => [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)]
+
+// Même motif que scrapling-bakeoff.py : montants en euros ou clés de prix.
+const XHR_PRICE =
+  /(?:€|EUR)\s*\d[\d\s .,]{0,8}\d|\d[\d\s .,]{0,8}\d\s*(?:€|EUR)|"(?:grossPrice|b_raw_price|priceValue|formattedPrice|displayPrice|structuredDisplayPrice|price|amount)"\s*:/gi
 
 type Row = {
   engine: string
@@ -38,9 +49,7 @@ if (command === 'fetch') {
   mkdirSync(out, { recursive: true })
   const engines: Engine[] = ['social', 'cloak', 'impit']
   for (const arg of targets) {
-    const at = arg.indexOf('=')
-    const target = arg.slice(0, at)
-    const url = arg.slice(at + 1)
+    const [target, url] = splitTarget(arg)
     for (const engine of engines) {
       console.log(`\n═══ goupil-${engine} — ${target}\n    ${url.slice(0, 130)}`)
       const row: Row = { engine: `goupil-${engine}`, target, url, ms: 0 }
@@ -58,6 +67,73 @@ if (command === 'fetch') {
       console.log(`    ${row.ms} ms`)
       appendFileSync(join(out, 'results.jsonl'), JSON.stringify(row) + '\n')
     }
+  }
+  process.exit(0)
+}
+
+if (command === 'patchright') {
+  mkdirSync(out, { recursive: true })
+  const { chromium } = await import('patchright')
+  for (const arg of targets) {
+    const [target, url] = splitTarget(arg)
+    console.log(`\n═══ patchright — ${target}\n    ${url.slice(0, 130)}`)
+    const row: Row = { engine: 'patchright', target, url, ms: 0, xhr_prices: [] }
+    const t0 = Date.now()
+    const browser = await chromium.launch({ headless: true })
+    try {
+      const context = await browser.newContext({ locale: 'fr-FR', timezoneId: 'Europe/Paris' })
+      const page = await context.newPage()
+      const reads: Promise<void>[] = []
+      page.on('response', (res) => {
+        if (!['xhr', 'fetch'].includes(res.request().resourceType())) return
+        reads.push(
+          res
+            .text()
+            .then((text) => {
+              const hits = text.match(XHR_PRICE)
+              if (hits) {
+                row.xhr_prices!.push({
+                  url: res.url().slice(0, 200),
+                  status: res.status(),
+                  hits: hits.length,
+                  sample: [...new Set(hits.map((h) => h.trim()))].sort().slice(0, 8),
+                })
+              }
+            })
+            .catch(() => {})
+        )
+      })
+      // Mêmes attentes que le mode stealth de Scrapling : referer Google, mur
+      // Akamai laissé 45 s, réseau au repos (60 s max), puis 3 s.
+      const res = await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 60_000,
+        referer: 'https://www.google.com/',
+      })
+      await page
+        .waitForFunction(
+          () => !/robot ou pas robot|bot or not|are you a robot|access denied/i.test(document.title),
+          undefined,
+          { timeout: 45_000, polling: 2_000 }
+        )
+        .catch(() => console.log('    (mur toujours là après 45 s)'))
+      await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => null)
+      await page.waitForTimeout(3_000)
+      await Promise.all(reads)
+      const html = await page.content()
+      row.status = res?.status()
+      row.bytes = html.length
+      writeFileSync(join(out, `patchright-${target}.html`), html)
+      console.log(`    HTTP ${row.status} — ${html.length} octets — XHR avec des prix : ${row.xhr_prices!.length}`)
+    } catch (err) {
+      row.error = err instanceof Error ? err.message.slice(0, 300) : String(err)
+      console.log(`    ERREUR ${row.error}`)
+    } finally {
+      await browser.close().catch(() => {})
+    }
+    row.ms = Date.now() - t0
+    console.log(`    ${row.ms} ms`)
+    appendFileSync(join(out, 'results.jsonl'), JSON.stringify(row) + '\n')
   }
   process.exit(0)
 }
@@ -85,8 +161,9 @@ const say = (line = '') => {
 say('## Scrapling vs goupil — même runner, même minute')
 say()
 say('Chaque HTML passe par le vrai `extractFromHtml(html, { profile: "lodging" })` de goupil.')
+say('`exploitable` = critère de la chaîne `auto` (`looksBlocked`) : pas de mur, et JSON-LD ou og:title/og:image.')
 say('`champs` = champs du profil lodging résolus (sur 9). `€ HTML` = montants plausibles')
-say('distincts dans le HTML ; `€ XHR` = réponses XHR contenant des prix (Scrapling stealth).')
+say('distincts dans le HTML ; `€ XHR` = réponses XHR contenant des prix (navigateurs seulement).')
 
 for (const target of [...new Set(rows.map((r) => r.target))]) {
   say()
