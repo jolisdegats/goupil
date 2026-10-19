@@ -27,18 +27,25 @@ Tourne sur **Netlify Functions** (free tier), sans navigateur — voir
 |---|---|---|
 | Booking | `social` | fiche complète en JSON-LD (Hotel, adresse, GPS, note, photos) |
 | Expedia | `cloak` | fiche complète en **microdata** schema.org (pas de JSON-LD chez Expedia) |
-| Airbnb, Abritel | — | pas encore mesurés dans ce repo |
+| Airbnb | `cloak` (ou `impit`) | 5 des 9 champs du profil lodging, dont le nom, et les photos (`social` reçoit un 403) |
+| Abritel | — | 429 « Robot ou pas robot » pour tous les moteurs, navigateurs furtifs compris (page de recherche) |
 
 - **Photos** : une fiche Booking contient ~281 photos uniques, mais seules
   ~45 appartiennent à l'hôtel — le reste vient des avis, du pied de page et
   des hébergements recommandés. Utiliser une règle `regex` bornée par `until`
   (voir « API — /extract ») pour couper avant ces blocs.
 - **Prix** : **pas** extrait aujourd'hui. Sur les fiches (listing pages),
-  le tarif arrive par XHR et n'est pas dans le HTML serveur. Pistes en cours
-  d'investigation (workflows `price-*`) : les **pages de recherche** Expedia
-  contiennent bien des montants dans le HTML (reste à les rattacher au bon
-  hôtel) ; chez Airbnb le tarif pourrait déjà figurer dans les données
-  embarquées dès que l'URL porte des dates.
+  le tarif arrive par XHR et n'est pas dans le HTML serveur (Airbnb compris,
+  même avec des dates). Mesuré (workflow `scrapling`) : un navigateur qui
+  **écoute ses XHR** le récupère — Expedia (réponses `graphql` avec
+  `displayPrice`) et Airbnb (`StaysPdpBookItQuery` : prix par nuit, frais,
+  total). Sur Airbnb, patchright nu suffit ; sur Expedia, seul le navigateur
+  furtif de [Scrapling](https://github.com/D4Vinci/Scrapling) passe Akamai
+  (patchright nu : 429). Coût : Python + Chromium (~1,1 Go), 10 à 70 s par
+  page — hors de portée d'une function Netlify, il faudrait un hôte
+  conteneurisé. Autre piste (workflows `price-*`) : les **pages de
+  recherche** Expedia contiennent des montants dans le HTML (reste à les
+  rattacher au bon hôtel).
 
 ## Moteurs (`engine`, par requête)
 
@@ -262,7 +269,7 @@ plus lent (cold start).
   `cloak` pour vérifier que le binaire natif se charge en Lambda). Les tests
   authentifiés exigent le secret Actions `API_KEY`.
 - Les autres workflows (`expedia-*`, `httpcloak`, `engine-bakeoff`,
-  `richness`, `price-*`, `prices-photos`, `camoufox-test`) sont des
+  `richness`, `price-*`, `prices-photos`, `camoufox-test`, `scrapling`) sont des
   **sondes d'investigation** ponctuelles : ils documentent les mesures qui
   ont mené aux choix ci-dessus, ne testent pas le service en continu.
 
