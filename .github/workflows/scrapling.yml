@@ -1,0 +1,78 @@
+name: scrapling
+# Scrapling (D4Vinci / Karim Shoair) vaut-il une place dans goupil ?
+# Ses fetchers (curl_cffi « Chrome », Chromium patchright furtif + capture
+# XHR) contre nos moteurs social/cloak/impit, sur les mêmes cibles, depuis le
+# même runner, à la même minute. Scrapling tourne dans son image Docker
+# officielle ; tous les HTML passent ensuite par le VRAI code d'extraction de
+# goupil (profil lodging). Tableau final dans le résumé du run.
+#
+# Le déclencheur `push` (limité à cette branche et à ces fichiers) existe parce
+# qu'un workflow_dispatch n'est déclenchable que depuis la branche par défaut.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Image Docker Scrapling"
+        required: false
+        default: "pyd4vinci/scrapling:latest"
+      airbnb:
+        description: "Annonce Airbnb (avec des dates RÉELLEMENT disponibles)"
+        required: false
+        default: "https://www.airbnb.fr/rooms/602824612447596322?check_in=2027-02-11&check_out=2027-02-14&adults=2&guests=1"
+  push:
+    branches: [ccr-3effe9c8-gs549r]
+    paths:
+      - .github/workflows/scrapling.yml
+      - .github/scripts/scrapling-*
+
+jobs:
+  bakeoff:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ${{ inputs.image || 'pyd4vinci/scrapling:latest' }}
+      AIRBNB: ${{ inputs.airbnb || 'https://www.airbnb.fr/rooms/602824612447596322?check_in=2027-02-11&check_out=2027-02-14&adults=2&guests=1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # Des dates futures à chaque run : des dates passées ou indisponibles
+      # donnent « pas de prix », ce qui se confond avec « prix inextractible ».
+      - name: "Cibles (dates à J+35 → J+37)"
+        run: |
+          S=$(date -d '+35 days' +%F); E=$(date -d '+37 days' +%F)
+          {
+            echo "T_BOOKING=booking=https://www.booking.com/hotel/fr/le-bristol-paris.html?checkin=$S&checkout=$E&group_adults=2&no_rooms=1&selected_currency=EUR"
+            echo "T_EXPEDIA=expedia=https://www.expedia.fr/Brussels-Hotel-Juliana-Hotel-Brussels.h67403455.Description-Hotel?startDate=$S&endDate=$E&adults=2&rooms=1&rm1=a2"
+            echo "T_AIRBNB=airbnb=$AIRBNB"
+            echo "T_ABRITEL=abritel=https://www.abritel.fr/search?destination=Annecy%2C%20France&startDate=$S&endDate=$E&adults=2"
+          } >> "$GITHUB_ENV"
+
+      - name: "goupil — social, cloak, impit (référence)"
+        run: npx --yes tsx@4.19.2 .github/scripts/scrapling-compare.mts fetch out "$T_BOOKING" "$T_EXPEDIA" "$T_AIRBNB" "$T_ABRITEL"
+
+      # Ce que coûterait l'hébergement : Scrapling est du Python avec ses
+      # navigateurs — rien de tout ça n'entre dans une Netlify Function.
+      - name: "Scrapling — image, version, empreinte"
+        run: |
+          START=$(date +%s)
+          docker pull --quiet "$IMAGE"
+          echo "pull : $(( $(date +%s) - START )) s"
+          docker image inspect "$IMAGE" --format 'image : {{index .RepoDigests 0}} — {{.Size}} octets'
+          docker run --rm --entrypoint sh "$IMAGE" -c '
+            /app/.venv/bin/python -c "import scrapling; print(\"scrapling\", scrapling.__version__)"
+            du -sh /app/.venv /root/.cache/ms-playwright/* 2>/dev/null'
+
+      - name: "Scrapling — http, social, stealth (dans le conteneur)"
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w --entrypoint /app/.venv/bin/python "$IMAGE" \
+            -I .github/scripts/scrapling-bakeoff.py out "$T_BOOKING" "$T_EXPEDIA" "$T_AIRBNB" "$T_ABRITEL"
+
+      - name: "Verdict — tout passe par l'extraction de goupil"
+        if: always()
+        run: |
+          sudo chown -R "$(id -u)" out
+          npx --yes tsx@4.19.2 .github/scripts/scrapling-compare.mts verdict out
